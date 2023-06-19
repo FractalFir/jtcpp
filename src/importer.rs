@@ -39,6 +39,7 @@ pub(crate) enum OpCode {
     IRem,
     InvokeSpecial(u16),
     InvokeVirtual(u16),
+    InvokeStatic(u16),
     Return,
     IReturn,
     GetStatic(u16),
@@ -99,6 +100,11 @@ fn load_ops<R: std::io::Read>(
                 let constant_pool_index = load_u16(src)?;
                 curr_offset += 2;
                 OpCode::InvokeSpecial(constant_pool_index)
+            }
+            0xb8 => {
+                let constant_pool_index = load_u16(src)?;
+                curr_offset += 2;
+                OpCode::InvokeStatic(constant_pool_index)
             }
             _ => todo!("Unhandled opcode:{op:x}!"),
         };
@@ -192,6 +198,12 @@ pub(crate) struct Method {
     attributes: Box<[Attribute]>,
 }
 impl Method {
+    pub(crate) fn name_index(&self) -> u16 {
+        self.name_index
+    }
+    pub(crate) fn descriptor_index(&self) -> u16 {
+        self.descriptor_index
+    }
     pub(crate) fn max_locals(&self) -> Option<u16> {
         for attribute in self.attributes.iter() {
             if let Attribute::Code {
@@ -246,12 +258,16 @@ impl Method {
 pub(crate) struct ImportedJavaClass {
     const_items: Box<[ConstantItem]>,
     //name: IString,
+    this_class: u16,
     fields: Box<[Field]>,
     methods: Box<[Method]>,
     attributes: Box<[Attribute]>, //field_names: Box<[IString]>,
 }
 impl ImportedJavaClass {
-    pub(crate) fn lookup_utf8(&self,utf8:u16)->Option<&str>{
+    pub(crate) fn this_class(&self) -> u16 {
+        self.this_class
+    }
+    pub(crate) fn lookup_utf8(&self, utf8: u16) -> Option<&str> {
         let utf8 = &self.const_items[utf8 as usize - 1];
         if let ConstantItem::Utf8(string) = utf8 {
             Some(&string)
@@ -259,21 +275,48 @@ impl ImportedJavaClass {
             None
         }
     }
-    pub(crate) fn lookup_class(&self,class_ref:u16)->Option<&str>{
+    pub(crate) fn lookup_class(&self, class_ref: u16) -> Option<&str> {
         //panic!("Const string index must point to a UTF8 const item!")
         let name_index = &self.const_items[class_ref as usize - 1];
-        if let ConstantItem::Class{name_index} = name_index {
+        if let ConstantItem::Class { name_index } = name_index {
             self.lookup_utf8(*name_index)
         } else {
             None
         }
     }
-    pub(crate) fn lookup_filed_ref(&self,field_ref:u16)->Option<(u16,u16)>{
+    pub(crate) fn lookup_filed_ref(&self, field_ref: u16) -> Option<(u16, u16)> {
         let field_ref = &self.const_items[field_ref as usize - 1];
-        if let ConstantItem::FieldRef{class_index,name_and_type_index} = field_ref{
-            Some((*class_index,*name_and_type_index))
+        if let ConstantItem::FieldRef {
+            class_index,
+            name_and_type_index,
+        } = field_ref
+        {
+            Some((*class_index, *name_and_type_index))
+        } else {
+            None
         }
-        else{
+    }
+    pub(crate) fn lookup_nametype(&self, nametype: u16) -> Option<(u16, u16)> {
+        let nametype = &self.const_items[nametype as usize - 1];
+        if let ConstantItem::NameAndType {
+            name_index,
+            descriptor_index,
+        } = nametype
+        {
+            Some((*name_index, *descriptor_index))
+        } else {
+            None
+        }
+    }
+    pub(crate) fn lookup_method_ref(&self, method_ref: u16) -> Option<(u16, u16)> {
+        let method_ref = &self.const_items[method_ref as usize - 1];
+        if let ConstantItem::MethodRef {
+            class_index,
+            name_and_type_index,
+        } = method_ref
+        {
+            Some((*class_index, *name_and_type_index))
+        } else {
             None
         }
     }
@@ -462,6 +505,7 @@ pub(crate) fn load_class<R: std::io::Read>(
         fields: fields.into(),
         methods: methods.into(),
         const_items: const_items.into(),
+        this_class,
     })
 }
 #[derive(Debug)]
