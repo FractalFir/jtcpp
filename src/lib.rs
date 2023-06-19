@@ -3,6 +3,11 @@ use crate::importer::OpCode;
 use std::collections::HashMap;
 mod importer;
 struct Class {}
+impl Class{
+    fn empty()->Self{
+        Self{}
+    }
+}
 enum Method {
     RawOps { ops: Box<[OpCode]>, max_locals: u16,argc:u8 },
 }
@@ -30,28 +35,28 @@ fn call_raw_ops(
                 return Ok(stack.pop().unwrap());
             }
             OpCode::IAdd => {
-                let b = stack.pop().unwrap().as_int().unwrap();
                 let a = stack.pop().unwrap().as_int().unwrap();
+                let b = stack.pop().unwrap().as_int().unwrap();
                 stack.push(Value::Int(a + b));
             }
             OpCode::IMul => {
-                let b = stack.pop().unwrap().as_int().unwrap();
                 let a = stack.pop().unwrap().as_int().unwrap();
+                let b = stack.pop().unwrap().as_int().unwrap();
                 stack.push(Value::Int(a * b));
             }
             OpCode::IDiv => {
-                let b = stack.pop().unwrap().as_int().unwrap();
                 let a = stack.pop().unwrap().as_int().unwrap();
+                let b = stack.pop().unwrap().as_int().unwrap();
                 stack.push(Value::Int(a / b));
             }
             OpCode::IRem => {
-                let b = stack.pop().unwrap().as_int().unwrap();
                 let a = stack.pop().unwrap().as_int().unwrap();
+                let b = stack.pop().unwrap().as_int().unwrap();
                 stack.push(Value::Int(a % b));
             }
             OpCode::ISub => {
-                let b = stack.pop().unwrap().as_int().unwrap();
                 let a = stack.pop().unwrap().as_int().unwrap();
+                let b = stack.pop().unwrap().as_int().unwrap();
                 stack.push(Value::Int(a - b));
             }
             OpCode::InvokeStatic(index) => {
@@ -120,7 +125,7 @@ impl EnvMemory {
     }
 }
 struct CodeContainer {
-    classes: Vec<Option<Class>>,
+    classes: Vec<Class>,
     class_names: HashMap<IString, usize>,
     methods: Vec<Option<Method>>,
     method_names: HashMap<IString, usize>,
@@ -131,13 +136,13 @@ impl CodeContainer {
             .class_names
             .entry(name.to_owned().into_boxed_str())
             .or_insert_with(|| {
-                self.classes.push(None);
+                self.classes.push(Class::empty());
                 self.classes.len() - 1
             })
     }
     fn set_or_replace_class(&mut self, name: &str, class: Class) -> usize {
         let idx = self.lookup_or_insert_class(name);
-        self.classes[idx] = Some(class);
+        self.classes[idx] = class;
         idx
     }
     fn lookup_or_insert_method(&mut self, name: &str) -> usize {
@@ -150,9 +155,9 @@ impl CodeContainer {
             })
     }
     fn new() -> Self {
-        let object_class = Class {};
+        let object_class = Class::empty();
         let methods = Vec::new();
-        let classes = vec![Some(object_class)];
+        let classes = vec![object_class];
         let class_names = HashMap::with_capacity(0x100);
         let method_names = HashMap::with_capacity(0x100);
         Self {
@@ -169,10 +174,37 @@ struct ExecEnv {
     env_mem: EnvMemory,
     //objects:Vec<Option<Object>>
 }
-fn mangle_method_name(class: &str, method: &str) -> IString {
-    format!("{class}::{method}").into_boxed_str()
+#[test]
+fn arg_counter(){
+    assert_eq!(method_desc_to_argc("()I"),0);
+    assert_eq!(method_desc_to_argc("(I)I"),1);
+    assert_eq!(method_desc_to_argc("(IL)I"),2);
+    assert_eq!(method_desc_to_argc("(ILF)I"),3);
+    assert_eq!(method_desc_to_argc("(ILF)"),3);
+}
+fn method_desc_to_argc(desc:&str)->u8{
+    assert_eq!(desc.chars().nth(0),Some('('));
+    let mut char_beg = 0;
+    let mut char_end = 0;
+    for (index,character) in desc.chars().enumerate(){
+        if character == '('{
+            assert_eq!(char_beg,0);
+            char_beg = index;
+        }
+        else if character == ')'{
+            assert_eq!(char_end,0);
+            char_end = index;
+        }
+    }
+    (char_end - char_beg - 1) as u8
+}
+fn mangle_method_name(class: &str, method: &str,desc:&str) -> IString {
+    format!("{class}::{method}{desc}").into_boxed_str()
 }
 impl ExecEnv {
+    fn lookup_or_insert_static(&mut self, class:usize, static_field:&str)-> usize{
+        todo!("Can't insert statics yet!");
+    }
     pub fn new() -> Self {
         let env_mem = EnvMemory::new();
         let code_container = CodeContainer::new();
@@ -207,30 +239,36 @@ impl ExecEnv {
                 }
                 OpCode::InvokeStatic(index) => {
                     let (method_class, nametype) = class.lookup_method_ref(*index).unwrap();
-                    let (name, descrptor) = class.lookup_nametype(nametype).unwrap();
+                    let (name, descriptor) = class.lookup_nametype(nametype).unwrap();
                     let method_class = class.lookup_class(method_class).unwrap();
                     let name = class.lookup_utf8(name).unwrap();
-                    let mangled = mangle_method_name(method_class, name);
+                    let descriptor = class.lookup_utf8(descriptor).unwrap();
+                    let mangled = mangle_method_name(method_class, name,descriptor);
                     let method_id = self.code_container.lookup_or_insert_method(&mangled);
-                    //println!("method_class:{method_class} name:{name} mangled:{mangled} method_id:{method_id}");
                     *op = OpCode::InvokeStatic(method_id as u16);
                 }
                 _ => (),
             }
         }
         let max_locals = method.max_locals().unwrap();
-        let (name, descrptor) = (method.name_index(), method.descriptor_index());
+        let (name,  descriptor) = (method.name_index(), method.descriptor_index());
         let method_class = class.lookup_class(class.this_class()).unwrap();
         let name = class.lookup_utf8(name).unwrap();
-        let mangled = mangle_method_name(method_class, name);
+        let descriptor = class.lookup_utf8(descriptor).unwrap();
+        let mangled = mangle_method_name(method_class, name,descriptor);
         let method_id = self.code_container.lookup_or_insert_method(&mangled);
+        let argc = method_desc_to_argc(&descriptor);
+        println!("mangled:{mangled}");
         self.code_container.methods[method_id] = Some(Method::RawOps {
             ops: bytecode.into(),
             max_locals,
-            argc:1,
+            argc,
         });
     }
     pub(crate) fn load_class(&mut self, class: crate::importer::ImportedJavaClass) {
+        for field in class.fields(){
+            todo!("Can't load fields yet!");
+        }
         for method in class.methods() {
             self.load_method(method, &class);
         }
@@ -243,12 +281,14 @@ impl ExecEnv {
         method_id: usize,
         args: &[Value],
     ) -> Result<Value, ExecException> {
+        let mut args:Vec<_> = args.into();
+        args.reverse();
         let method = self.code_container.methods.get(method_id);
         method
             .ok_or(ExecException::MethodNotFound)?
             .as_ref()
             .ok_or(ExecException::MethodNotFound)?
-            .call(args, &mut self.env_mem, &self.code_container)
+            .call(&args, &mut self.env_mem, &self.code_container)
     }
 }
 #[derive(Debug)]
@@ -261,7 +301,7 @@ fn exec_identity() {
     let class = crate::importer::load_class(&mut file).unwrap();
     let mut exec_env = ExecEnv::new();
     exec_env.load_class(class);
-    let identity = exec_env.lookup_method("Identity::Identity").unwrap();
+    let identity = exec_env.lookup_method(&mangle_method_name("Identity","Identity","(I)I")).unwrap();
     for a in 0..1000 {
         assert_eq!(
             exec_env.call_method(identity,&[Value::Int(a)]).unwrap(),
@@ -276,11 +316,11 @@ fn basic_arthm() {
     let class = crate::importer::load_class(&mut file).unwrap();
     let mut exec_env = ExecEnv::new();
     exec_env.load_class(class);
-    let add = exec_env.lookup_method("BasicArthm::Add").unwrap();
-    let sub = exec_env.lookup_method("BasicArthm::Sub").unwrap();
-    let mul = exec_env.lookup_method("BasicArthm::Mul").unwrap();
-    let div = exec_env.lookup_method("BasicArthm::Div").unwrap();
-    let rem = exec_env.lookup_method("BasicArthm::Mod").unwrap();
+    let add = exec_env.lookup_method(&mangle_method_name("BasicArthm","Add","(II)I")).unwrap();
+    let sub = exec_env.lookup_method(&mangle_method_name("BasicArthm","Sub","(II)I")).unwrap();
+    let mul = exec_env.lookup_method(&mangle_method_name("BasicArthm","Mul","(II)I")).unwrap();
+    let div = exec_env.lookup_method(&mangle_method_name("BasicArthm","Div","(II)I")).unwrap();
+    let rem = exec_env.lookup_method(&mangle_method_name("BasicArthm","Mod","(II)I")).unwrap();
     for a in 0..100 {
         for b in 0..100 {
             assert_eq!(
@@ -328,20 +368,37 @@ fn exec_call() {
     let class = crate::importer::load_class(&mut file).unwrap();
     let mut exec_env = ExecEnv::new();
     exec_env.load_class(class);
-    let sqr_mag = exec_env.lookup_method("Calls::SqrMag").unwrap();
+    let sqr_mag = exec_env.lookup_method(&mangle_method_name("Calls","SqrMag","(III)I")).unwrap();
+    let first = exec_env.lookup_method(&mangle_method_name("Calls","ReturnFirst","(IIIII)I")).unwrap();
+    let second = exec_env.lookup_method(&mangle_method_name("Calls","ReturnSecond","(IIIII)I")).unwrap();
+    let last = exec_env.lookup_method(&mangle_method_name("Calls","ReturnLast","(IIIII)I")).unwrap();
+    let first_bck = exec_env.lookup_method(&mangle_method_name("Calls","ReturnFirst","(IIIII)I")).unwrap();
+     assert_eq!(exec_env.call_method(first_bck,&[Value::Int(1), Value::Int(2),Value::Int(3), Value::Int(4),Value::Int(5)]).unwrap(),Value::Int(1));
+    assert_eq!(exec_env.call_method(first,&[Value::Int(1), Value::Int(2),Value::Int(3), Value::Int(4),Value::Int(5)]).unwrap(),Value::Int(1));
+     assert_eq!(exec_env.call_method(second,&[Value::Int(1), Value::Int(2),Value::Int(3), Value::Int(4),Value::Int(5)]).unwrap(),Value::Int(2));
+     assert_eq!(exec_env.call_method(last,&[Value::Int(1), Value::Int(2),Value::Int(3), Value::Int(4),Value::Int(5)]).unwrap(),Value::Int(5));
     for a in 0..1000 {
         exec_env.call_method(sqr_mag,&[Value::Int(a), Value::Int(7),Value::Int(8)]).unwrap();
-    }
+    };
 }
-/*
+
 #[test]
 fn exec_hw() {
     let mut file = std::fs::File::open("test/HelloWorld.class").unwrap();
     let class = crate::importer::load_class(&mut file).unwrap();
     let mut exec_env = ExecEnv::new();
     exec_env.load_class(class);
-    for a in 0..1000 {
-        exec_env.code_container.methods[1].as_ref().unwrap().call(&[]);
-    }
+    
+    let hw = exec_env.lookup_method(&mangle_method_name("HelloWorld","main","([Ljava/lang/String;)V")).unwrap();
+    exec_env.call_method(hw,&[]).unwrap();
 }
-}*/
+#[test]
+fn fields() {
+    let mut file = std::fs::File::open("test/Fields.class").unwrap();
+    let class = crate::importer::load_class(&mut file).unwrap();
+    let mut exec_env = ExecEnv::new();
+    exec_env.load_class(class);
+    
+    //let hw = exec_env.lookup_method(&mangle_method_name("HelloWorld","main","([Ljava/lang/String;)V")).unwrap();
+    //exec_env.call_method(hw,&[]).unwrap();
+}

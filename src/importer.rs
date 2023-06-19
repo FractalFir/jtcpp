@@ -12,19 +12,23 @@ load_fn_impl!(load_u64, u64);
 load_fn_impl!(load_u32, u32);
 load_fn_impl!(load_u16, u16);
 load_fn_impl!(load_u8, u8);
-struct Field;
+#[derive(Debug)]
+pub(crate) struct Field{
+    name_index:u16,
+    descriptor_index:u16,
+    attributes:Box<[Attribute]>
+}
 impl Field {
-    fn read<R: std::io::Read>(src: &mut R) -> Result<Self, std::io::Error> {
-        todo!("Can't read fields yet!")
-    }
-}
-struct MethodAccessFlags {
-    mask: u16,
-}
-impl MethodAccessFlags {
-    fn read<R: std::io::Read>(src: &mut R) -> Result<Self, std::io::Error> {
-        let mask = load_u16(src)?;
-        Ok(Self { mask })
+    fn read<R: std::io::Read>(src: &mut R, const_items:&[ConstantItem]) -> Result<Self, std::io::Error> {
+        let flags = AccessFlags::read(src)?;
+        let name_index = load_u16(src)?;
+        let descriptor_index = load_u16(src)?;
+        let attributes_count = load_u16(src)?;
+        let mut attributes = Vec::with_capacity(attributes_count as usize);
+        for _ in 0..attributes_count {
+            attributes.push(Attribute::read(src, const_items)?);
+        }
+        Ok(Self{name_index,descriptor_index, attributes: attributes.into()})
     }
 }
 #[derive(Debug, Clone, Copy)]
@@ -114,6 +118,7 @@ fn load_ops<R: std::io::Read>(
     //println!("ops:{ops:?}");
     Ok(ops)
 }
+#[derive(Debug)]
 enum Attribute {
     Code {
         max_stack: u16,
@@ -192,7 +197,7 @@ impl Attribute {
     }
 }
 pub(crate) struct Method {
-    access_flags: MethodAccessFlags,
+    access_flags: AccessFlags,
     name_index: u16,
     descriptor_index: u16,
     attributes: Box<[Attribute]>,
@@ -239,7 +244,7 @@ impl Method {
         src: &mut R,
         const_items: &[ConstantItem],
     ) -> Result<Self, std::io::Error> {
-        let access_flags = MethodAccessFlags::read(src)?;
+        let access_flags = AccessFlags::read(src)?;
         let name_index = load_u16(src)?;
         let descriptor_index = load_u16(src)?;
         let attributes_count = load_u16(src)?;
@@ -342,6 +347,9 @@ impl ImportedJavaClass {
     }
     pub(crate) fn methods(&self) -> &[Method] {
         &self.methods
+    }
+    pub(crate) fn fields(&self) -> &[Field] {
+        &self.fields
     }
 }
 #[derive(Debug)]
@@ -487,7 +495,7 @@ pub(crate) fn load_class<R: std::io::Read>(
     let fields_count = load_u16(src)?;
     let mut fields = Vec::with_capacity(fields_count as usize);
     for _ in 0..fields_count {
-        fields.push(Field::read(src)?);
+        fields.push(Field::read(src,&const_items)?);
     }
     let methods_count = load_u16(src)?;
     let mut methods = Vec::with_capacity(methods_count as usize);

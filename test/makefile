@@ -1,6 +1,6 @@
 CMP = javac
 ARGS = 
-all: Identity.class BasicArthm.class HelloWorld.class Calls.class
+all: Identity.class BasicArthm.class HelloWorld.class Calls.class Fields.class
 Identity.class:
 	$(CMP) $(ARGS) Identity.java
 BasicArthm.class:
@@ -9,3 +9,5 @@ HelloWorld.class:
 	$(CMP) $(ARGS) HelloWorld.java
 Calls.class:
 	$(CMP) $(ARGS) Calls.java
+Fields.class:
+	$(CMP) $(ARGS) Fields.java
