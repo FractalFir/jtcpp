@@ -10,6 +10,16 @@ impl Class{
 }
 enum Method {
     RawOps { ops: Box<[OpCode]>, max_locals: u16,argc:u8 },
+    Invokable(Box<dyn Invokable>),
+}
+trait Invokable{
+    fn call(
+        &self,
+        args: &[Value],
+        memory: &mut EnvMemory,
+        code_container: &CodeContainer,
+    ) -> Result<Value, ExecException>;
+    fn argc(&self)->usize;
 }
 fn call_raw_ops(
     ops: &[OpCode],
@@ -31,6 +41,7 @@ fn call_raw_ops(
         match curr_op {
             OpCode::ILoad(index) => stack.push(locals[*index as usize].clone()),
             OpCode::IStore(index) => locals[*index as usize] = stack.pop().unwrap(),
+            OpCode::IConst(value) => stack.push(Value::Int(*value)),
             OpCode::IReturn => {
                 return Ok(stack.pop().unwrap());
             }
@@ -79,6 +90,7 @@ impl Method {
     fn argument_count(&self)->usize{
         match self {
             Self::RawOps { ops, max_locals,argc } => *argc as usize,
+            Self::Invokable(invokable) => invokable.argc(),
         }
     }
     fn call(
@@ -91,6 +103,7 @@ impl Method {
             Self::RawOps { ops, max_locals, argc} => {
                 call_raw_ops(&ops, *max_locals, args, memory, code_container)
             }
+            Self::Invokable(invokable) => invokable.call(args,memory,code_container),
         }
     }
 }
@@ -362,6 +375,18 @@ fn basic_arthm() {
         }
     }
 }
+struct AddFiveInvokable;
+impl Invokable for AddFiveInvokable{
+fn call(
+         &self,
+         args: &[Value],
+        memory: &mut EnvMemory,
+        code_container: &CodeContainer,
+     ) -> Result<Value, ExecException>{
+    Ok(Value::Int(args[0].as_int().unwrap() + 5)) 
+}
+fn argc(&self)->usize{1}
+}
 #[test]
 fn exec_call() {
     let mut file = std::fs::File::open("test/Calls.class").unwrap();
@@ -379,6 +404,14 @@ fn exec_call() {
      assert_eq!(exec_env.call_method(last,&[Value::Int(1), Value::Int(2),Value::Int(3), Value::Int(4),Value::Int(5)]).unwrap(),Value::Int(5));
     for a in 0..1000 {
         exec_env.call_method(sqr_mag,&[Value::Int(a), Value::Int(7),Value::Int(8)]).unwrap();
+    };
+    let extern_call = exec_env.lookup_method(&mangle_method_name("Calls","ExternCallTest","(I)I")).unwrap();
+    for a in -1000..1000 {
+        assert_eq!(exec_env.call_method(extern_call,&[Value::Int(a)]).unwrap(),Value::Int(0));
+    };
+    exec_env.code_container.methods[extern_call] = Some(Method::Invokable(Box::new(AddFiveInvokable)));
+    for a in -1000..1000 {
+        assert_eq!(exec_env.call_method(extern_call,&[Value::Int(a)]).unwrap(),Value::Int(a + 5));
     };
 }
 

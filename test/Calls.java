@@ -35,4 +35,7 @@ public class Calls{
   public static int ReturnForth(int x,int y,int z,int w,int q){
       return ReturnForthBackend(x,y,z,w,q);
   }
+  public static int ExternCallTest(int a){
+    return 0;
+  }
 }

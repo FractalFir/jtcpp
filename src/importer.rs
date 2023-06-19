@@ -35,6 +35,7 @@ impl Field {
 pub(crate) enum OpCode {
     ALoad(u8),
     ILoad(u8),
+    IConst(i32),
     IStore(u8),
     IAdd,
     ISub,
@@ -60,6 +61,7 @@ fn load_ops<R: std::io::Read>(
         print!("{curr_offset}");
         curr_offset += 1;
         let decoded_op = match op {
+            0x2..=0x8 => OpCode::IConst(op as i32 - 0x3),
             0x12 => {
                 let constant_pool_index = load_u8(src)?;
                 curr_offset += 1;
