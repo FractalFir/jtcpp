@@ -78,7 +78,7 @@ impl Method {
     pub(crate) fn name(&self, class: &ImportedJavaClass) -> &str {
         todo!();
     }
-    pub(crate) fn bytecode(&self) -> Option<&[OpCode]> {
+    pub(crate) fn bytecode(&self) -> Option<&[(OpCode,u16)]> {
         for attribute in self.attributes.iter() {
             if let Attribute::Code {
                 ops,
@@ -124,6 +124,12 @@ pub(crate) struct ImportedJavaClass {
 impl ImportedJavaClass {
     pub(crate) fn this_class(&self) -> u16 {
         self.this_class
+    }
+    pub(crate) fn lookup_item(&self,index: u16)->Option<&ConstantItem>{
+        if index < 1 || index as usize >= self.const_items.len(){
+            None
+        }
+        else{Some(&self.const_items[index as usize - 1])}
     }
     pub(crate) fn lookup_utf8(&self, utf8: u16) -> Option<&str> {
         let utf8 = &self.const_items[utf8 as usize - 1];
@@ -289,7 +295,7 @@ impl AccessFlags {
 impl ConstantItem {
     fn read<R: std::io::Read>(src: &mut R) -> Result<Self, ConstantImportError> {
         let tag = load_u8(src)?;
-        println!("tag:{tag}");
+        //println!("tag:{tag}");
         match tag {
             
             1 => {

@@ -1,6 +1,7 @@
 pub(crate) type IString = Box<str>;
 use crate::importer::opcodes::OpCode;
 use std::collections::HashMap;
+mod executor;
 mod importer;
 struct Class {}
 impl Class {
@@ -8,12 +9,10 @@ impl Class {
         Self {}
     }
 }
+use crate::executor::baseir::BaseIR;
 enum Method {
-    RawOps {
-        ops: Box<[OpCode]>,
-        max_locals: u16,
-        argc: u8,
-        is_static: bool,
+    BaseIR {
+        ops: Box<[BaseIR]>,
     },
     Invokable(Box<dyn Invokable>),
 }
@@ -26,92 +25,7 @@ trait Invokable {
     ) -> Result<Value, ExecException>;
     fn argc(&self) -> usize;
 }
-fn call_raw_ops(
-    ops: &[OpCode],
-    max_locals: u16,
-    args: &[Value],
-    memory: &mut EnvMemory,
-    code_container: &CodeContainer,
-) -> Result<Value, ExecException> {
-    let mut stack: Vec<Value> = Vec::new();
-    let mut locals: Vec<_> = args.into();
-    while locals.len() < max_locals as usize {
-        locals.push(Value::Void);
-    }
-    let mut op_index = 0;
-    println!("ops:{ops:?}\n\n");
-    loop {
-        //println!("stack:{stack:?}");
-        let curr_op = &ops[op_index];
-        match curr_op {
-            OpCode::ILoad(index) => stack.push(locals[*index as usize].clone()),
-            OpCode::ALoad(index) => stack.push(locals[*index as usize].clone()),
-            OpCode::IStore(index) => locals[*index as usize] = stack.pop().unwrap(),
-            OpCode::IConst(value) => stack.push(Value::Int(*value)),
-            OpCode::IReturn => {
-                return Ok(stack.pop().unwrap());
-            }
-            OpCode::IAdd => {
-                let a = stack.pop().unwrap().as_int().unwrap();
-                let b = stack.pop().unwrap().as_int().unwrap();
-                stack.push(Value::Int(a + b));
-            }
-            OpCode::IMul => {
-                let a = stack.pop().unwrap().as_int().unwrap();
-                let b = stack.pop().unwrap().as_int().unwrap();
-                stack.push(Value::Int(a * b));
-            }
-            OpCode::IDiv => {
-                let a = stack.pop().unwrap().as_int().unwrap();
-                let b = stack.pop().unwrap().as_int().unwrap();
-                stack.push(Value::Int(a / b));
-            }
-            OpCode::IRem => {
-                let a = stack.pop().unwrap().as_int().unwrap();
-                let b = stack.pop().unwrap().as_int().unwrap();
-                stack.push(Value::Int(a % b));
-            }
-            OpCode::ISub => {
-                let a = stack.pop().unwrap().as_int().unwrap();
-                let b = stack.pop().unwrap().as_int().unwrap();
-                stack.push(Value::Int(a - b));
-            }
-            OpCode::InvokeStatic(index) => {
-                //let arg
-                let method = code_container.methods[*index as usize].as_ref().unwrap();
-                let argc = method.argument_count();
-                //TODO: Ensure proper arg order!
-                let args: Box<[_]> = (0..argc).map(|_| stack.pop().unwrap()).collect();
-                let res = method.call(&args, memory, code_container)?;
-                if let Value::Void = res {
-                } else {
-                    stack.push(res)
-                };
-            }
-            _ => todo!("Can't handle opcode {curr_op:?}"),
-        }
-        op_index += 1;
-    }
-    panic!("Unreachable condition reached!");
-}
 impl Method {
-    fn argument_count(&self) -> usize {
-        match self {
-            Self::RawOps {
-                ops,
-                max_locals,
-                argc,
-                is_static,
-            } => {
-                if *is_static {
-                    *argc as usize
-                } else {
-                    *argc as usize + 1
-                }
-            }
-            Self::Invokable(invokable) => invokable.argc(),
-        }
-    }
     fn call(
         &self,
         args: &[Value],
@@ -119,13 +33,8 @@ impl Method {
         code_container: &CodeContainer,
     ) -> Result<Value, ExecException> {
         match self {
-            Self::RawOps {
-                ops,
-                max_locals,
-                argc,
-                is_static,
-            } => call_raw_ops(&ops, *max_locals, args, memory, code_container),
             Self::Invokable(invokable) => invokable.call(args, memory, code_container),
+            Method::BaseIR { ops } => executor::baseir::call(ops,args,memory,code_container),
         }
     }
 }
@@ -259,11 +168,15 @@ impl ExecEnv {
             self.code_container.methods.push(None);
             return;
         };
+        let fat = crate::executor::fatops::expand_ops(bytecode,&class);
+        println!("fat:{fat:?}");
+        let baseir = crate::executor::baseir::into_base(&fat,self).unwrap();
+        /*
         let mut bytecode = bytecode.to_owned();
         for mut op in bytecode.iter_mut() {
-            match op {
+            match op.0 {
                 OpCode::GetStatic(index) => {
-                    let lookup_filed_ref = class.lookup_filed_ref(*index).unwrap();
+                    let lookup_filed_ref = class.lookup_filed_ref(index).unwrap();
                     let class = class.lookup_class(lookup_filed_ref.0).unwrap();
                     //let class_index
                     //println!("class:{class}");
@@ -272,18 +185,19 @@ impl ExecEnv {
                     //self.env_mem.push
                 }
                 OpCode::InvokeStatic(index) => {
-                    let (method_class, nametype) = class.lookup_method_ref(*index).unwrap();
+                    let (method_class, nametype) = class.lookup_method_ref(index).unwrap();
                     let (name, descriptor) = class.lookup_nametype(nametype).unwrap();
                     let method_class = class.lookup_class(method_class).unwrap();
                     let name = class.lookup_utf8(name).unwrap();
                     let descriptor = class.lookup_utf8(descriptor).unwrap();
                     let mangled = mangle_method_name(method_class, name, descriptor);
                     let method_id = self.code_container.lookup_or_insert_method(&mangled);
-                    *op = OpCode::InvokeStatic(method_id as u16);
+                    *op = (OpCode::InvokeStatic(method_id as u16),op.1);
                 }
                 _ => (),
             }
         }
+        */
         let max_locals = method.max_locals().unwrap();
         let (name, descriptor) = (method.name_index(), method.descriptor_index());
         let method_class = class.lookup_class(class.this_class()).unwrap();
@@ -295,11 +209,9 @@ impl ExecEnv {
         let af = method.access_flags();
         let is_static = af.is_static();
         println!("mangled:{mangled}");
-        self.code_container.methods[method_id] = Some(Method::RawOps {
-            ops: bytecode.into(),
-            max_locals,
-            argc,
-            is_static,
+        
+        self.code_container.methods[method_id] = Some(Method::BaseIR {
+            ops: baseir,
         });
     }
     pub(crate) fn load_class(&mut self, class: crate::importer::ImportedJavaClass) {

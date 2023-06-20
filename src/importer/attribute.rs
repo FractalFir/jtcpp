@@ -28,7 +28,7 @@ pub(crate) enum Attribute {
     Code {
         max_stack: u16,
         max_locals: u16,
-        ops: Box<[OpCode]>,
+        ops: Box<[(OpCode,u16)]>,
         exceptions: Box<[CodeException]>,
         attributes: Box<[Attribute]>,
     },
@@ -167,9 +167,9 @@ impl Attribute {
                         catch_type,
                     });
                 }
-                println!("exceptions :{exceptions:?}");
+                //println!("exceptions :{exceptions:?}");
                 let attributes_count = load_u16(src)?;
-                println!("ac:{attributes_count}");
+                //println!("ac:{attributes_count}");
                 let mut attributes = Vec::with_capacity(attributes_count as usize);
                 for _ in 0..attributes_count {
                     attributes.push(Self::read(src, const_items)?);

@@ -60,12 +60,13 @@ pub(crate) enum OpCode {
 pub(crate) fn load_ops<R: std::io::Read>(
     src: &mut R,
     code_length: u32,
-) -> Result<Vec<OpCode>, std::io::Error> {
+) -> Result<Vec<(OpCode,u16)>, std::io::Error> {
     let mut curr_offset = 0;
     let mut ops = Vec::with_capacity(code_length as usize);
-    while curr_offset < code_length {
+    while (curr_offset as u32) < code_length {
         let op = load_u8(src)?;
-        print!("{curr_offset}:\t");
+        let op_offset = curr_offset;
+        //print!("{curr_offset}:\t");
         curr_offset += 1;
         let decoded_op = match op {
             0x0 => OpCode::Nop,
@@ -235,8 +236,8 @@ pub(crate) fn load_ops<R: std::io::Read>(
             }
             _ => todo!("Unhandled opcode:{op:x}!"),
         };
-        ops.push(decoded_op);
-        println!("{decoded_op:?}");
+        ops.push((decoded_op,op_offset));
+        //println!("{decoded_op:?}");
     }
     //println!("ops:{ops:?}");
     Ok(ops)
