@@ -3,17 +3,11 @@ use crate::importer::opcodes::OpCode;
 use std::collections::HashMap;
 mod executor;
 mod importer;
-struct Class {}
-impl Class {
-    fn empty() -> Self {
-        Self {}
-    }
-}
+type ObjectRef = usize;
 use crate::executor::baseir::BaseIR;
+use executor::class::Class;
 enum Method {
-    BaseIR {
-        ops: Box<[BaseIR]>,
-    },
+    BaseIR { ops: Box<[BaseIR]> },
     Invokable(Box<dyn Invokable>),
 }
 trait Invokable {
@@ -34,15 +28,16 @@ impl Method {
     ) -> Result<Value, ExecException> {
         match self {
             Self::Invokable(invokable) => invokable.call(args, memory, code_container),
-            Method::BaseIR { ops } => executor::baseir::call(ops,args,memory,code_container),
+            Method::BaseIR { ops } => executor::baseir::call(ops, args, memory, code_container),
         }
     }
 }
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone,Copy, Debug, PartialEq)]
 enum Value {
     Void,
     Int(i32),
-    ObjectRef(i32),
+    ObjectRef(ObjectRef),
+    Float(f32),
 }
 impl Value {
     fn as_int(&self) -> Option<i32> {
@@ -51,16 +46,51 @@ impl Value {
             _ => None,
         }
     }
+    fn as_float(&self) -> Option<f32> {
+        match self {
+            Value::Float(a) => Some(*a),
+            _ => None,
+        }
+    }
+    fn as_objref(&self) -> Option<ObjectRef> {
+        match self {
+            Value:: ObjectRef(id) => Some(*id),
+            _ => None,
+        }
+    }
 }
 enum Object {
-    Object { values: Box<[Value]> },
+    Object {
+        class_id: usize,
+        values: Box<[Value]>,
+    },
     String(IString),
+}
+impl Object{
+    pub fn set_field(&mut self,id:usize,value:Value){
+        println!("seting field {id} to {value:?}");
+        match self{
+             Self::Object {values,..}=>values[id] = value,
+             _=>(),
+        }
+    }
+    pub fn get_field(&self,id:usize)->Option<Value>{
+        match self{
+             Self::Object {values,..}=>values.get(id).cloned(),
+             _=>None,
+        }
+    }
 }
 struct EnvMemory {
     objects: Vec<Object>,
     statics: Vec<Value>,
 }
 impl EnvMemory {
+    pub(crate) fn insert_static(&mut self,value:Value)->usize{
+        let index = self.statics.len();
+        self.statics.push(value);
+        index
+    }
     fn new() -> Self {
         Self {
             objects: Vec::with_capacity(0x100),
@@ -75,17 +105,18 @@ struct CodeContainer {
     method_names: HashMap<IString, usize>,
 }
 impl CodeContainer {
-    fn lookup_or_insert_class(&mut self, name: &str) -> usize {
-        *self
+    fn lookup_class(&self, name: &str) -> Option<usize> {
+        //println!("class_names:{:?}",self.class_names);
+        self.class_names.get(name).copied()
+    }
+    fn set_or_replace_class(&mut self, name: &str, class: Class) -> usize {
+        let idx = *self
             .class_names
             .entry(name.to_owned().into_boxed_str())
             .or_insert_with(|| {
                 self.classes.push(Class::empty());
                 self.classes.len() - 1
-            })
-    }
-    fn set_or_replace_class(&mut self, name: &str, class: Class) -> usize {
-        let idx = self.lookup_or_insert_class(name);
+            });
         self.classes[idx] = class;
         idx
     }
@@ -101,15 +132,17 @@ impl CodeContainer {
     fn new() -> Self {
         let object_class = Class::empty();
         let methods = Vec::new();
-        let classes = vec![object_class];
+        let classes = vec![];
         let class_names = HashMap::with_capacity(0x100);
         let method_names = HashMap::with_capacity(0x100);
-        Self {
+        let mut res = Self {
             methods,
             classes,
             class_names,
             method_names,
-        }
+        };
+        res.set_or_replace_class("java/lang/Object", object_class);
+        res
     }
     //fn set_meth
 }
@@ -168,36 +201,9 @@ impl ExecEnv {
             self.code_container.methods.push(None);
             return;
         };
-        let fat = crate::executor::fatops::expand_ops(bytecode,&class);
+        let fat = crate::executor::fatops::expand_ops(bytecode, &class);
         println!("fat:{fat:?}");
-        let baseir = crate::executor::baseir::into_base(&fat,self).unwrap();
-        /*
-        let mut bytecode = bytecode.to_owned();
-        for mut op in bytecode.iter_mut() {
-            match op.0 {
-                OpCode::GetStatic(index) => {
-                    let lookup_filed_ref = class.lookup_filed_ref(index).unwrap();
-                    let class = class.lookup_class(lookup_filed_ref.0).unwrap();
-                    //let class_index
-                    //println!("class:{class}");
-                    //let const_string = class.lookup_const_string(*index as usize).unwrap();
-                    //println!("Const string:{const_string}");
-                    //self.env_mem.push
-                }
-                OpCode::InvokeStatic(index) => {
-                    let (method_class, nametype) = class.lookup_method_ref(index).unwrap();
-                    let (name, descriptor) = class.lookup_nametype(nametype).unwrap();
-                    let method_class = class.lookup_class(method_class).unwrap();
-                    let name = class.lookup_utf8(name).unwrap();
-                    let descriptor = class.lookup_utf8(descriptor).unwrap();
-                    let mangled = mangle_method_name(method_class, name, descriptor);
-                    let method_id = self.code_container.lookup_or_insert_method(&mangled);
-                    *op = (OpCode::InvokeStatic(method_id as u16),op.1);
-                }
-                _ => (),
-            }
-        }
-        */
+        let baseir = crate::executor::baseir::into_base(&fat, self).unwrap();
         let max_locals = method.max_locals().unwrap();
         let (name, descriptor) = (method.name_index(), method.descriptor_index());
         let method_class = class.lookup_class(class.this_class()).unwrap();
@@ -208,22 +214,29 @@ impl ExecEnv {
         let argc = method_desc_to_argc(&descriptor);
         let af = method.access_flags();
         let is_static = af.is_static();
-        println!("mangled:{mangled}");
-        
-        self.code_container.methods[method_id] = Some(Method::BaseIR {
-            ops: baseir,
-        });
+        //println!("mangled:{mangled}");
+
+        self.code_container.methods[method_id] = Some(Method::BaseIR { ops: baseir });
     }
     pub(crate) fn load_class(&mut self, class: crate::importer::ImportedJavaClass) {
-        for field in class.fields() {
-            //todo!("Can't load fields yet!");
-        }
+        let base_class = crate::executor::fatclass::expand_class(&class);
+        let final_class = crate::executor::class::finalize(&base_class, self).unwrap();
+        self.code_container
+            .set_or_replace_class(base_class.class_name(), final_class);
         for method in class.methods() {
             self.load_method(method, &class);
         }
     }
     pub(crate) fn lookup_method(&self, method_name: &str) -> Option<usize> {
         self.code_container.method_names.get(method_name).copied()
+    }
+    pub(crate) fn lookup_class(&self, class_name: &str) -> Option<usize> {
+        self.code_container.lookup_class(class_name)
+    }
+    pub(crate) fn new_obj(&mut self,class:usize) -> ObjectRef{
+        let new_obj = self.code_container.classes[class].new();
+        self.env_mem.objects.push(new_obj);
+        self.env_mem.objects.len() - 1
     }
     pub(crate) fn call_method(
         &mut self,
@@ -484,11 +497,36 @@ fn gravity() {
     let class = crate::importer::load_class(&mut file).unwrap();
     let mut exec_env = ExecEnv::new();
     exec_env.load_class(class);
-
-    let hw = exec_env
+    let tick = exec_env
         .lookup_method(&mangle_method_name("Gravity", "Tick", "()V"))
         .unwrap();
-    exec_env.call_method(hw, &[Value::ObjectRef(1)]).unwrap();
+    let set = exec_env
+        .lookup_method(&mangle_method_name("Gravity", "Set", "(FF)V"))
+        .unwrap();
+    let getx = exec_env
+        .lookup_method(&mangle_method_name("Gravity", "GetX", "()F"))
+        .unwrap();
+    let class = exec_env.lookup_class("Gravity").unwrap();
+    let obj = exec_env.new_obj(class);
+    exec_env.call_method(set, &[Value::Float(123.43),Value::Float(203.23),Value::ObjectRef(obj)]).unwrap();
+    for _ in 0..1{
+        println!("Calling Tick!");
+        exec_env.call_method(tick, &[Value::ObjectRef(obj)]).unwrap();
+        println!("Calling GetX!");
+        let res = exec_env.call_method(getx, &[Value::ObjectRef(obj)]).unwrap();
+        println!("res:{res:?}");
+    }
+    panic!();
+}
+#[test]
+fn extends() {
+    let mut file = std::fs::File::open("test/SuperClass.class").unwrap();
+    let super_class = crate::importer::load_class(&mut file).unwrap();
+    let mut file = std::fs::File::open("test/Extends.class").unwrap();
+    let class = crate::importer::load_class(&mut file).unwrap();
+    let mut exec_env = ExecEnv::new();
+    exec_env.load_class(super_class);
+    exec_env.load_class(class);
 }
 /*
 #[test]

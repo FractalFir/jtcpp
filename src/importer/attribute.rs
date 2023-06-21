@@ -1,5 +1,5 @@
-use super::{load_u8,load_u16,load_u32,load_u64,load_i8,load_i16,AccessFlags,ConstantItem};
-use super::opcodes::{OpCode,load_ops};
+use super::opcodes::{load_ops, OpCode};
+use super::{load_i16, load_i8, load_u16, load_u32, load_u64, load_u8, AccessFlags, ConstantItem};
 #[derive(Debug)]
 pub(crate) struct LocalVariable {
     start_pc: u16,
@@ -16,11 +16,14 @@ pub(crate) struct CodeException {
     catch_type: u16,
 }
 #[derive(Debug)]
-pub(crate) struct MethodParameter{name_index:u16,access_flags:AccessFlags}
+pub(crate) struct MethodParameter {
+    name_index: u16,
+    access_flags: AccessFlags,
+}
 #[derive(Debug)]
-pub(crate) struct BootstrapMethod{
-    bootstrap_method_ref:u16,
-    bootstrap_args:Box<[u16]>,
+pub(crate) struct BootstrapMethod {
+    bootstrap_method_ref: u16,
+    bootstrap_args: Box<[u16]>,
 }
 #[derive(Debug)]
 pub(crate) enum Attribute {
@@ -28,7 +31,7 @@ pub(crate) enum Attribute {
     Code {
         max_stack: u16,
         max_locals: u16,
-        ops: Box<[(OpCode,u16)]>,
+        ops: Box<[(OpCode, u16)]>,
         exceptions: Box<[CodeException]>,
         attributes: Box<[Attribute]>,
     },
@@ -41,12 +44,24 @@ pub(crate) enum Attribute {
     LocalVariableTable {
         local_vars: Box<[LocalVariable]>,
     },
-    NestHost{host_class_index:u16},
-    NestMembers{classes:Box<[u16]>},
-    MethodParameters{parameters:Box<[MethodParameter]>},
-    BootstrapMethods{bootstrap_methods:Box<[BootstrapMethod]>},
-    Exceptions{exceptions:Box<[u16]>},
-    Signature{signature:u16},
+    NestHost {
+        host_class_index: u16,
+    },
+    NestMembers {
+        classes: Box<[u16]>,
+    },
+    MethodParameters {
+        parameters: Box<[MethodParameter]>,
+    },
+    BootstrapMethods {
+        bootstrap_methods: Box<[BootstrapMethod]>,
+    },
+    Exceptions {
+        exceptions: Box<[u16]>,
+    },
+    Signature {
+        signature: u16,
+    },
     Deprecated,
 }
 impl Attribute {
@@ -92,57 +107,71 @@ impl Attribute {
             "MethodParameters" => {
                 let parameters_count = load_u8(src)? as usize;
                 let mut parameters = Vec::with_capacity(parameters_count);
-                for _ in 0..parameters_count{
+                for _ in 0..parameters_count {
                     let name_index = load_u16(src)?;
                     let access_flags = AccessFlags::read(src)?;
-                    parameters.push(MethodParameter{name_index,access_flags});
+                    parameters.push(MethodParameter {
+                        name_index,
+                        access_flags,
+                    });
                 }
-                Ok(Self::MethodParameters{parameters:parameters.into()})
+                Ok(Self::MethodParameters {
+                    parameters: parameters.into(),
+                })
             }
-            "Deprecated"=>Ok(Self::Deprecated),
-            "Record"=>Ok(Self::Unknown), // IDK what it does.
+            "Deprecated" => Ok(Self::Deprecated),
+            "Record" => Ok(Self::Unknown),        // IDK what it does.
             "StackMapTable" => Ok(Self::Unknown), //Not worth the effort.
             "RuntimeVisibleAnnotations" => Ok(Self::Unknown), //TODO: Handle this at some point.
             "LocalVariableTypeTable" => Ok(Self::Unknown), //TODO: Not needed, but nice to have.
-            "InnerClasses" => Ok(Self::Unknown), //TODO: Handle inner classes!
+            "InnerClasses" => Ok(Self::Unknown),  //TODO: Handle inner classes!
             "Exceptions" => {
                 let number_exceptions = load_u16(src)? as usize;
                 let mut exceptions = Vec::with_capacity(number_exceptions);
-                for _ in 0..number_exceptions{
+                for _ in 0..number_exceptions {
                     exceptions.push(load_u16(src)?);
                 }
-                Ok(Self::Exceptions{exceptions:exceptions.into()})   
+                Ok(Self::Exceptions {
+                    exceptions: exceptions.into(),
+                })
             }
-            "Signature" =>{
+            "Signature" => {
                 let signature = load_u16(src)?;
-                Ok(Self::Signature{signature})
+                Ok(Self::Signature { signature })
             }
-            "BootstrapMethods"=>{
+            "BootstrapMethods" => {
                 let bootstrap_method_count = load_u16(src)? as usize;
                 let mut bootstrap_methods = Vec::with_capacity(bootstrap_method_count);
-                for _ in 0..bootstrap_method_count{
+                for _ in 0..bootstrap_method_count {
                     let bootstrap_method_ref = load_u16(src)?;
                     let num_bootstrap_arguments = load_u16(src)? as usize;
                     let mut bootstrap_args = Vec::with_capacity(num_bootstrap_arguments);
-                    for _ in 0..num_bootstrap_arguments{
+                    for _ in 0..num_bootstrap_arguments {
                         bootstrap_args.push(load_u16(src)?);
                     }
-                    bootstrap_methods.push(BootstrapMethod{bootstrap_method_ref,bootstrap_args:bootstrap_args.into()});
+                    bootstrap_methods.push(BootstrapMethod {
+                        bootstrap_method_ref,
+                        bootstrap_args: bootstrap_args.into(),
+                    });
                 }
-                Ok(Self::BootstrapMethods{bootstrap_methods:bootstrap_methods.into()})
+                Ok(Self::BootstrapMethods {
+                    bootstrap_methods: bootstrap_methods.into(),
+                })
             }
-            "NestHost"=>{
+            "NestHost" => {
                 let host_class_index = load_u16(src)?;
-                Ok(Self::NestHost{host_class_index})
-            },
-            "NestMembers"=>{
+                Ok(Self::NestHost { host_class_index })
+            }
+            "NestMembers" => {
                 let class_count = load_u16(src)? as usize;
                 let mut classes = Vec::with_capacity(class_count);
-                for _ in 0..class_count{
+                for _ in 0..class_count {
                     classes.push(load_u16(src)?);
                 }
-                Ok(Self::NestMembers{classes:classes.into()})
-            },
+                Ok(Self::NestMembers {
+                    classes: classes.into(),
+                })
+            }
             "SourceFile" => {
                 let sourcefile_index = load_u16(src)?;
                 Ok(Self::SourceFile { sourcefile_index })

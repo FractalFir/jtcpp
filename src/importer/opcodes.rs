@@ -1,4 +1,4 @@
-use super::{load_i16,load_u16,load_i8,load_u8};
+use super::{load_i16, load_i8, load_u16, load_u8};
 #[derive(Debug, Clone, Copy)]
 pub(crate) enum OpCode {
     Nop,
@@ -21,7 +21,7 @@ pub(crate) enum OpCode {
     IRem,
     IShr,
     IAnd,
-    IInc(u8,i8),
+    IInc(u8, i8),
     InvokeSpecial(u16),
     InvokeVirtual(u16),
     InvokeInterface(u16),
@@ -37,8 +37,8 @@ pub(crate) enum OpCode {
     PutField(u16),
     LoadConst(u16),
     IfICmpEq(i16),
-    IfZero(i16),//aka IfEq on wikipedia
-    IfNotZero(i16),//aka IfEq on wikipedia
+    IfZero(i16),    //aka IfEq on wikipedia
+    IfNotZero(i16), //aka IfEq on wikipedia
     IfNull(i16),
     IfNotNull(i16),
     IfIGreterEqual(i16),
@@ -60,7 +60,7 @@ pub(crate) enum OpCode {
 pub(crate) fn load_ops<R: std::io::Read>(
     src: &mut R,
     code_length: u32,
-) -> Result<Vec<(OpCode,u16)>, std::io::Error> {
+) -> Result<Vec<(OpCode, u16)>, std::io::Error> {
     let mut curr_offset = 0;
     let mut ops = Vec::with_capacity(code_length as usize);
     while (curr_offset as u32) < code_length {
@@ -89,17 +89,17 @@ pub(crate) fn load_ops<R: std::io::Read>(
                 curr_offset += 1;
                 OpCode::ILoad(index)
             }
-            0x19=>{
+            0x19 => {
                 let index = load_u8(src)?;
                 curr_offset += 1;
                 OpCode::ALoad(index)
-            },
+            }
             0x1a..=0x1d => OpCode::ILoad(op - 0x1a),
             0x22..=0x25 => OpCode::FLoad(op - 0x22),
             0x2a..=0x2d => OpCode::ALoad(op - 0x2a),
             0x32 => OpCode::AALoad,
             0x33 => OpCode::BALoad,
-            0x3a=> {
+            0x3a => {
                 let index = load_u8(src)?;
                 curr_offset += 1;
                 OpCode::IStore(index)
@@ -130,8 +130,8 @@ pub(crate) fn load_ops<R: std::io::Read>(
                 let var = load_u8(src)?;
                 let incr = load_i8(src)?;
                 curr_offset += 2;
-                 OpCode::IInc(var,incr)
-            },
+                OpCode::IInc(var, incr)
+            }
             0x99 => {
                 let offset = load_i16(src)?;
                 curr_offset += 2;
@@ -197,7 +197,7 @@ pub(crate) fn load_ops<R: std::io::Read>(
                 curr_offset += 2;
                 OpCode::InvokeStatic(constant_pool_index)
             }
-            0xb9=>{
+            0xb9 => {
                 let constant_pool_index = load_u16(src)?;
                 curr_offset += 2;
                 OpCode::InvokeInterface(constant_pool_index)
@@ -236,7 +236,7 @@ pub(crate) fn load_ops<R: std::io::Read>(
             }
             _ => todo!("Unhandled opcode:{op:x}!"),
         };
-        ops.push((decoded_op,op_offset));
+        ops.push((decoded_op, op_offset));
         //println!("{decoded_op:?}");
     }
     //println!("ops:{ops:?}");

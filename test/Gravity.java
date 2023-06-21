@@ -3,15 +3,16 @@ public class Gravity{
     float y;
     float vx;
     float vy;
-    float Sqrt(float in){
+    static float Sqrt(float in){
       return in;
     }
     void Tick(){
        float distance = Sqrt(x*x + y*y);
-       vx -= x * distance;
-       vy -= y * distance;
-       x += vx;
-       y += vy;
+       float t = 0.01f;
+       vx -= (x * distance)*t;
+       vy -= (y * distance)*t;
+       x += vx*t;
+       y += vy*t;
     }
     void Set(float x, float y){
       this.x = x;

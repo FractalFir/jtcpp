@@ -1,5 +1,5 @@
-pub mod opcodes;
 mod attribute;
+pub mod opcodes;
 use crate::IString;
 use attribute::Attribute;
 use opcodes::OpCode;
@@ -20,8 +20,9 @@ load_fn_impl!(load_u8, u8);
 load_fn_impl!(load_i8, i8);
 #[derive(Debug)]
 pub(crate) struct Field {
-    name_index: u16,
-    descriptor_index: u16,
+    pub(crate) flags: AccessFlags,
+    pub(crate) name_index: u16,
+    pub(crate) descriptor_index: u16,
     attributes: Box<[Attribute]>,
 }
 impl Field {
@@ -38,6 +39,7 @@ impl Field {
             attributes.push(Attribute::read(src, const_items)?);
         }
         Ok(Self {
+            flags,
             name_index,
             descriptor_index,
             attributes: attributes.into(),
@@ -75,10 +77,7 @@ impl Method {
         }
         None
     }
-    pub(crate) fn name(&self, class: &ImportedJavaClass) -> &str {
-        todo!();
-    }
-    pub(crate) fn bytecode(&self) -> Option<&[(OpCode,u16)]> {
+    pub(crate) fn bytecode(&self) -> Option<&[(OpCode, u16)]> {
         for attribute in self.attributes.iter() {
             if let Attribute::Code {
                 ops,
@@ -117,6 +116,7 @@ pub(crate) struct ImportedJavaClass {
     const_items: Box<[ConstantItem]>,
     //name: IString,
     this_class: u16,
+    super_class: u16,
     fields: Box<[Field]>,
     methods: Box<[Method]>,
     attributes: Box<[Attribute]>, //field_names: Box<[IString]>,
@@ -125,11 +125,15 @@ impl ImportedJavaClass {
     pub(crate) fn this_class(&self) -> u16 {
         self.this_class
     }
-    pub(crate) fn lookup_item(&self,index: u16)->Option<&ConstantItem>{
-        if index < 1 || index as usize >= self.const_items.len(){
+    pub(crate) fn super_class(&self) -> u16 {
+        self.super_class
+    }
+    pub(crate) fn lookup_item(&self, index: u16) -> Option<&ConstantItem> {
+        if index < 1 || index as usize >= self.const_items.len() {
             None
+        } else {
+            Some(&self.const_items[index as usize - 1])
         }
-        else{Some(&self.const_items[index as usize - 1])}
     }
     pub(crate) fn lookup_utf8(&self, utf8: u16) -> Option<&str> {
         let utf8 = &self.const_items[utf8 as usize - 1];
@@ -201,9 +205,6 @@ impl ImportedJavaClass {
             panic!("Const string index must point to a UTF8 const item!")
         }
     }*/
-    fn name(&self) -> &str {
-        todo!();
-    }
     pub(crate) fn methods(&self) -> &[Method] {
         &self.methods
     }
@@ -245,7 +246,7 @@ pub(crate) enum ConstantItem {
         reference_index: u16,
     },
     MethodType {
-        descriptor_index:u16,
+        descriptor_index: u16,
     },
     Utf8(IString),
     Long(u64),
@@ -297,7 +298,6 @@ impl ConstantItem {
         let tag = load_u8(src)?;
         //println!("tag:{tag}");
         match tag {
-            
             1 => {
                 let length = load_u16(src)?;
                 let mut bytes = vec![0; length as usize];
@@ -306,9 +306,9 @@ impl ConstantItem {
                 //println!("bytes:{bytes:?} string:{istring}");
                 Ok(Self::Utf8(istring))
             }
-            5=>{
+            5 => {
                 let long = load_u64(src)?;
-                println!("long:{long:x}");
+                //println!("long:{long:x}");
                 Ok(Self::Long(long))
             }
             7 => {
@@ -361,9 +361,7 @@ impl ConstantItem {
             }
             16 => {
                 let descriptor_index = load_u16(src)?;
-                Ok(Self::MethodType {
-                    descriptor_index
-                })
+                Ok(Self::MethodType { descriptor_index })
             }
             18 => {
                 let bootstrap_method_attr_index = load_u16(src)?;
@@ -425,13 +423,14 @@ pub(crate) fn load_class<R: std::io::Read>(
     for _ in 0..attributes_count {
         attributes.push(Attribute::read(src, &const_items)?);
     }
-    println!("const_items:{const_items:?}");
+    //println!("const_items:{const_items:?}");
     Ok(ImportedJavaClass {
         attributes: attributes.into(),
         fields: fields.into(),
         methods: methods.into(),
         const_items: const_items.into(),
         this_class,
+        super_class,
     })
 }
 #[derive(Debug)]
@@ -473,14 +472,14 @@ impl From<zip::result::ZipError> for BytecodeImportError {
     }
 }
 pub(crate) fn load_jar(
-    src: &mut (impl std::io::Read  + std::io::Seek),
+    src: &mut (impl std::io::Read + std::io::Seek),
 ) -> Result<Vec<ImportedJavaClass>, BytecodeImportError> {
     let mut zip = zip::ZipArchive::new(src)?;
     let mut classes = Vec::new();
     for i in 0..zip.len() {
         let mut file = zip.by_index(i)?;
         let ext = file.name().split('.').last();
-        let ext = if let Some(ext) = ext{ext} else {continue}.to_owned();
+        let ext = if let Some(ext) = ext { ext } else { continue }.to_owned();
         println!("Filename: {} ext:{ext:?}", file.name());
         if ext == "class" {
             classes.push(load_class(&mut file)?);
@@ -490,7 +489,7 @@ pub(crate) fn load_jar(
             // TODO fix this stupidness, may need to write an issue to request ZipFile to implement Seek.
             let mut tmp = Vec::new();
             file.read_to_end(&mut tmp)?;
-            let mut reader = std::io::Cursor::new(tmp); 
+            let mut reader = std::io::Cursor::new(tmp);
             classes.extend(load_jar(&mut reader)?);
         }
     }
