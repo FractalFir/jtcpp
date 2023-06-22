@@ -1,6 +1,7 @@
 use super::UnmetDependency;
 use crate::executor::fatops::FatOp;
 use crate::ExecEnv;
+use super::ExecCtx;
 use crate::{CodeContainer, EnvMemory, ExecException, Value};
 #[derive(Debug)]
 pub(crate) enum BaseIR {
@@ -24,6 +25,7 @@ pub(crate) enum BaseIR {
     ISub,
     IRem,
     IDiv,
+    FDiv,
     InvokeSpecial(usize, u8),
     InvokeStatic(usize, u8),
     InvokeVirtual(usize, u8),
@@ -73,6 +75,7 @@ pub(crate) fn into_base(
             FatOp::IMul => BaseIR::IMul,
             FatOp::FMul => BaseIR::FMul,
             FatOp::IDiv => BaseIR::IDiv,
+            FatOp::FDiv => BaseIR::FDiv,
             FatOp::IRem => BaseIR::IRem,
             FatOp::ALoad(index) => BaseIR::ALoad(*index),
             FatOp::ILoad(index) => BaseIR::ILoad(*index),
@@ -117,120 +120,129 @@ pub(crate) fn into_base(
     }
     Ok(newops.into())
 }
-pub(crate) fn call(
+pub(crate) fn call<'caller,'env>(
     ops: &[BaseIR],
-    args: &[Value],
-    memory: &mut EnvMemory,
-    code_container: &CodeContainer,
-) -> Result<Value, ExecException> {
+    mut ctx:ExecCtx
+) -> Result<Value, ExecException> 
+where 'caller: 'env
+{
     let mut op_index = 0;
-    let mut stack: Vec<Value> = Vec::with_capacity(100);
-    let mut locals: Vec<_> = args.into();
+    //let mut stack: Vec<Value> = Vec::with_capacity(100);
+    //let mut locals: Vec<_> = args.into();
     //TODO: get actual number!
-    let max_locals = 100;
-    while locals.len() < max_locals as usize {
-        locals.push(Value::Void);
-    }
+    //let max_locals = 100;
+    //while locals.len() < max_locals as usize {
+        //locals.push(Value::Void);
+    //}
     loop {
         let op = &ops[op_index];
-        println!("op:{op:?} stack:{stack:?}");
+        //println!("op:{op:?} stack:{stack:?}");
         match op {
             BaseIR::Dup=> {
-                let a = stack.pop().unwrap();
-                stack.push(a);
-                stack.push(a);
+                let a:Value = ctx.stack_pop().unwrap().clone();
+                ctx.stack_push(a);
+                ctx.stack_push(a);
             }
-            BaseIR::IConst(value) => stack.push(Value::Int(*value)),
-            BaseIR::ILoad(index) => stack.push(locals[*index as usize].clone()),
-            BaseIR::FLoad(index) => stack.push(locals[*index as usize].clone()),
-            BaseIR::ALoad(index) => stack.push(locals[*index as usize].clone()),
+            BaseIR::IConst(value) => ctx.stack_push(Value::Int(*value)),
+            BaseIR::ILoad(index) => ctx.stack_push(ctx.get_local(*index).clone()),
+            BaseIR::FLoad(index) => ctx.stack_push(ctx.get_local(*index).clone()),
+            BaseIR::ALoad(index) => ctx.stack_push(ctx.get_local(*index).clone()),
             BaseIR::IStore(index) => {
-                let a = stack.pop().unwrap();
-                locals[*index as usize] = a.clone();
+                let a = ctx.stack_pop().unwrap();
+                ctx.set_local(*index,a.clone());
             }
             BaseIR::FStore(index) => {
-                let a = stack.pop().unwrap();
-                locals[*index as usize] = a.clone();
+                let a = ctx.stack_pop().unwrap();
+                ctx.set_local(*index,a.clone());
             }
             BaseIR::IAdd => {
-                let a = stack.pop().unwrap().as_int().unwrap();
-                let b = stack.pop().unwrap().as_int().unwrap();
-                stack.push(Value::Int(a + b));
+              let b = ctx.stack_pop().unwrap().as_int().unwrap();
+                let a = ctx.stack_pop().unwrap().as_int().unwrap();
+                ctx.stack_push(Value::Int(a + b));
             }
             BaseIR::FAdd => {
-                let a = stack.pop().unwrap().as_float().unwrap();
-                let b = stack.pop().unwrap().as_float().unwrap();
-                stack.push(Value::Float(a + b));
+                let b = ctx.stack_pop().unwrap().as_float().unwrap();
+				let a = ctx.stack_pop().unwrap().as_float().unwrap();
+                ctx.stack_push(Value::Float(a + b));
             }
             BaseIR::ISub => {
-                let a = stack.pop().unwrap().as_int().unwrap();
-                let b = stack.pop().unwrap().as_int().unwrap();
-                stack.push(Value::Int(a - b));
+                let b = ctx.stack_pop().unwrap().as_int().unwrap();
+                let a = ctx.stack_pop().unwrap().as_int().unwrap();
+                ctx.stack_push(Value::Int(a - b));
             }
             BaseIR::FSub => {
-                let a = stack.pop().unwrap().as_float().unwrap();
-                let b = stack.pop().unwrap().as_float().unwrap();
-                stack.push(Value::Float(a - b));
+                let b = ctx.stack_pop().unwrap().as_float().unwrap();
+				let a = ctx.stack_pop().unwrap().as_float().unwrap();
+                ctx.stack_push(Value::Float(a - b));
             }
             BaseIR::IMul => {
-                let a = stack.pop().unwrap().as_int().unwrap();
-                let b = stack.pop().unwrap().as_int().unwrap();
-                stack.push(Value::Int(a * b));
+                let b = ctx.stack_pop().unwrap().as_int().unwrap();
+                let a = ctx.stack_pop().unwrap().as_int().unwrap();
+                ctx.stack_push(Value::Int(a * b));
             }
             BaseIR::FMul => {
-                let a = stack.pop().unwrap().as_float().unwrap();
-                let b = stack.pop().unwrap().as_float().unwrap();
-                stack.push(Value::Float(a * b));
+                let b = ctx.stack_pop().unwrap().as_float().unwrap();
+				let a = ctx.stack_pop().unwrap().as_float().unwrap();
+                ctx.stack_push(Value::Float(a * b));
             }
             BaseIR::IDiv => {
-                let a = stack.pop().unwrap().as_int().unwrap();
-                let b = stack.pop().unwrap().as_int().unwrap();
-                stack.push(Value::Int(a / b));
+                let b = ctx.stack_pop().unwrap().as_int().unwrap();
+                let a = ctx.stack_pop().unwrap().as_int().unwrap();
+                ctx.stack_push(Value::Int(a / b));
+            }
+            BaseIR::FDiv => {
+                let b = ctx.stack_pop().unwrap().as_float().unwrap();
+				let a = ctx.stack_pop().unwrap().as_float().unwrap();
+                //println!("Dividing {a}/{b}");
+                ctx.stack_push(Value::Float(a / b));
             }
             BaseIR::IRem => {
-                let a = stack.pop().unwrap().as_int().unwrap();
-                let b = stack.pop().unwrap().as_int().unwrap();
-                stack.push(Value::Int(a % b));
+              let b = ctx.stack_pop().unwrap().as_int().unwrap();
+                let a = ctx.stack_pop().unwrap().as_int().unwrap();
+                ctx.stack_push(Value::Int(a % b));
             }
-            BaseIR::FPutField(id) => {
-                let val = stack.pop().unwrap();
-                let obj_ref = stack.pop().unwrap();
-                println!("{obj_ref:?} val:{val:?}");
+            BaseIR::FPutField(id) => {     
+                let val = ctx.stack_pop().unwrap();  
+                let obj_ref = ctx.stack_pop().unwrap();    
+                //println!("{obj_ref:?} val:{val:?}");
                 let obj_ref = obj_ref.as_objref().unwrap();
-                let obj = &mut memory.objects[obj_ref];
-                obj.set_field(*id,val);
+                ctx.put_field(obj_ref,*id,val);
+                //obj.set_field(*id,val);
             }
             BaseIR::FGetField(id) => {
-                let obj_ref = stack.pop().unwrap().as_objref().unwrap();
-                let obj = &memory.objects[obj_ref];
-                let value = obj.get_field(*id).unwrap();
-                println!("getfield val:{value:?}");
-                stack.push(value);
+                let obj_ref = ctx.stack_pop().unwrap().as_objref().unwrap();
+                let value = ctx.get_field(obj_ref,*id).unwrap();
+                //println!("getfield val:{value:?}");
+                ctx.stack_push(value);
             }
             BaseIR::IReturn | BaseIR::FReturn => {
-                return Ok(stack.pop().unwrap());
+                return Ok(ctx.stack_pop().unwrap());
             }
             BaseIR::Return => {
                 return Ok(Value::Void);
             }
-            BaseIR::InvokeStatic(index, argc) => {
-                let method = code_container.methods[*index as usize].as_ref().unwrap();
-                let args: Box<[_]> = (0..*argc).map(|_| stack.pop().unwrap()).collect();
-                let res = method.call(&args, memory, code_container)?;
+            /*
+            BaseIR::InvokeStatic(method_id, argc) => {
+                let mut args: Box<[Value]> = (0..*argc).map(|_| ctx.stack_pop().unwrap().clone()).collect();
+                args.reverse();
+                // Hack
+                let args = args;
+                let res:Value = ctx.invoke_method(&args,*method_id)?;
                 if let Value::Void = res {
                 } else {
-                    stack.push(res)
+                    ctx.stack_push(res)
                 };
             }
             BaseIR::InvokeSpecial(index, argc) => {
                 let method = code_container.methods[*index as usize].as_ref().unwrap();
-                let args: Box<[_]> = (0..*argc).map(|_| stack.pop().unwrap()).collect();
+                let mut args: Box<[_]> = (0..*argc).map(|_| ctx.stack_pop().unwrap()).collect();
+                args.reverse();
                 let res = method.call(&args, memory, code_container)?;
                 if let Value::Void = res {
                 } else {
-                    stack.push(res)
+                    ctx.stack_push(res)
                 };
-            }
+            }*/
             _ => todo!("Can't execute {op:?} yet!"),
         }
         op_index += 1;
