@@ -221,7 +221,7 @@ where 'caller: 'env
             BaseIR::Return => {
                 return Ok(Value::Void);
             }
-            /*
+            
             BaseIR::InvokeStatic(method_id, argc) => {
                 let mut args: Box<[Value]> = (0..*argc).map(|_| ctx.stack_pop().unwrap().clone()).collect();
                 args.reverse();
@@ -233,6 +233,7 @@ where 'caller: 'env
                     ctx.stack_push(res)
                 };
             }
+            /*
             BaseIR::InvokeSpecial(index, argc) => {
                 let method = code_container.methods[*index as usize].as_ref().unwrap();
                 let mut args: Box<[_]> = (0..*argc).map(|_| ctx.stack_pop().unwrap()).collect();

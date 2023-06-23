@@ -3,6 +3,7 @@ pub(crate) mod class;
 pub(crate) mod fatclass;
 pub(crate) mod fatops;
 use crate::importer::ImportedJavaClass;
+use core::ptr::NonNull;
 use crate::{Value,IString};
 use crate::ObjectRef;
 #[derive(Debug)]
@@ -49,9 +50,11 @@ pub(crate) fn field_descriptor_to_ftype(descriptor: u16, class: &ImportedJavaCla
 use smallvec::SmallVec;
 use crate::{EnvMemory,CodeContainer,ExecException};
 use core::cell::UnsafeCell;
-pub(crate) struct ExecCtx<'caller,'env>{
-    caller:Option<&'caller ExecCtx<'caller,'env>>,
-    args:&'caller [Value],
+//TODO: Make this safer(stop using NonNull, start using &). Lifetimes *realy* did not want to work with this.
+pub(crate) struct ExecCtx<'env>
+{
+    caller:Option<NonNull<ExecCtx<'env>>>,
+    args:NonNull<[Value]>,
     locals:usize,
     data:SmallVec::<[Value;12]>,
     memory: &'env UnsafeCell<EnvMemory>,
@@ -61,9 +64,9 @@ fn ref_to_cell<T>(ptr:&mut T)->&UnsafeCell<T>{
      unsafe { &*(ptr as *mut T as *const UnsafeCell<T>)}
 }
 //-> Result<Value, ExecException>
-impl<'caller,'env> ExecCtx<'caller,'env>{
+impl<'env> ExecCtx<'env>{
     fn get_local(&self,id:u8)->Value{
-        **self.args.get(id as usize).get_or_insert_with(||{&self.data[id as usize - self.args.len()]})
+        unsafe{**self.args.as_ref().get(id as usize).get_or_insert_with(||{&self.data[id as usize - self.args.len()]})}
     }
     fn set_local(&mut self,id:u8,value:Value){
         let idx = id as usize - self.args.len();
@@ -84,30 +87,25 @@ impl<'caller,'env> ExecCtx<'caller,'env>{
     fn get_field(&mut self,objref:ObjectRef,field_id:usize)->Option<Value>{
         unsafe{EnvMemory::get_field(self.memory.get(), objref,field_id)}
     }
-}
-impl<'caller,'env> ExecCtx<'caller,'env>
-where 'caller: 'env
-{    
-    pub(crate) fn new(memory: &'env mut EnvMemory,code_container: &'env CodeContainer,args:&'caller [Value],locals:usize)->Self{
+    pub(crate) fn new(memory: &'env mut EnvMemory,code_container: &'env CodeContainer,args:&'env [Value],locals:usize)->Self{
         let mut data = SmallVec::<[Value;12]>::new();
         for _ in 0..locals{
             data.push(Value::Void);
         }
         let memory = ref_to_cell(memory);
-        Self{memory,code_container,data,locals,args,caller:None}
+        Self{memory,code_container,data,locals,args:args.into(),caller:None}
     }
-    fn call<'par_env>(&'par_env mut self,args:&'caller [Value],locals:usize,callable:impl Fn(Self)-> Result<Value, ExecException>)-> Result<Value, ExecException>
-        where 'par_env:'caller
+    fn call(&mut self,args:&[Value],locals:usize,callable:impl Fn(Self)-> Result<Value, ExecException>)-> Result<Value, ExecException>
     {
         let mut data = SmallVec::<[Value;12]>::new();
         for _ in 0..locals{
             data.push(Value::Void);
         }
-        let call_arg = Self{memory:self.memory,code_container:self.code_container,data,locals,args,caller:Some(self)};
+        //let adr = std::ptr::addr_of!(*self);
+        let call_arg:ExecCtx<'env> = Self{memory:self.memory,code_container:self.code_container,data,locals,args:args.into(),caller:Some(self.into())};
         callable(call_arg)
     }
-    fn invoke_method<'par_env>(&'par_env mut self,args:&'caller [Value],method_id:usize)->Result<Value, ExecException>
-        where 'par_env:'caller
+    fn invoke_method<'caller>(&mut self,args:&'caller [Value],method_id:usize)->Result<Value, ExecException>
         {
         let method = self.code_container.methods.get(method_id)
             .ok_or(ExecException::MethodNotFound)?
