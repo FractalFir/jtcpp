@@ -1,7 +1,7 @@
+use super::ExecCtx;
 use super::UnmetDependency;
 use crate::executor::fatops::FatOp;
 use crate::ExecEnv;
-use super::ExecCtx;
 use crate::{CodeContainer, EnvMemory, ExecException, Value};
 #[derive(Debug)]
 pub(crate) enum BaseIR {
@@ -36,7 +36,7 @@ pub(crate) enum BaseIR {
     LGetStatic(usize),
     FGetStatic(usize),
     DGetStatic(usize),
-    OGetStatic(usize),
+    AGetStatic(usize),
     CGetStatic(usize),
     ZGetField(usize),
     BGetField(usize),
@@ -45,7 +45,7 @@ pub(crate) enum BaseIR {
     LGetField(usize),
     FGetField(usize),
     DGetField(usize),
-    OGetField(usize),
+    AGetField(usize),
     CGetField(usize),
     ZPutField(usize),
     BPutField(usize),
@@ -54,7 +54,7 @@ pub(crate) enum BaseIR {
     LPutField(usize),
     FPutField(usize),
     DPutField(usize),
-    OPutField(usize),
+    APutField(usize),
     CPutField(usize),
     Return,
     IReturn,
@@ -64,6 +64,7 @@ pub(crate) fn into_base(
     fat: &[FatOp],
     exec_env: &mut ExecEnv,
 ) -> Result<Box<[BaseIR]>, UnmetDependency> {
+    //println!("Fat:{fat:?}");
     let mut newops = Vec::with_capacity(fat.len());
     for op in fat {
         let newop = match op {
@@ -90,41 +91,80 @@ pub(crate) fn into_base(
                 let method_id = exec_env.code_container.lookup_or_insert_method(&mangled);
                 BaseIR::InvokeStatic(method_id, *args)
             }
-            FatOp::FGetField(class_name,field_name)=>{
+            FatOp::InvokeVirtual(class_name,method,argc)=>{
                 let class_id = exec_env.code_container.lookup_class(class_name);
                 let class_id = if let Some(class_id) = class_id {
                     class_id
                 } else {
                     return Err(UnmetDependency::NeedsClass(class_name.clone()));
                 };
-                let (field_id,_ftype) = exec_env.code_container.classes[class_id].get_field(field_name).unwrap();
+                let virtual_index = exec_env.code_container.classes[class_id].lookup_virtual(method).unwrap();
+                BaseIR::InvokeVirtual(virtual_index,*argc)
+            }
+            FatOp::FGetField(class_name, field_name) => {
+                let class_id = exec_env.code_container.lookup_class(class_name);
+                let class_id = if let Some(class_id) = class_id {
+                    class_id
+                } else {
+                    return Err(UnmetDependency::NeedsClass(class_name.clone()));
+                };
+                let (field_id, _ftype) = exec_env.code_container.classes[class_id]
+                    .get_field(field_name)
+                    .unwrap();
                 BaseIR::FGetField(field_id)
-            },
-            FatOp::FPutField(class_name,field_name)=>{
+            }
+            FatOp::FPutField(class_name, field_name) => {
                 let class_id = exec_env.code_container.lookup_class(class_name);
                 let class_id = if let Some(class_id) = class_id {
                     class_id
                 } else {
                     return Err(UnmetDependency::NeedsClass(class_name.clone()));
                 };
-                let (field_id,_ftype) = exec_env.code_container.classes[class_id].get_field(field_name).unwrap();
+                let (field_id, _ftype) = exec_env.code_container.classes[class_id]
+                    .get_field(field_name)
+                    .unwrap();
                 BaseIR::FPutField(field_id)
-            },
+            }
+            FatOp::IGetStatic(class_name, field_name) => {
+                let class_id = exec_env.code_container.lookup_class(class_name);
+                let class_id = if let Some(class_id) = class_id {
+                    class_id
+                } else {
+                    return Err(UnmetDependency::NeedsClass(class_name.clone()));
+                };
+                let static_id = exec_env.code_container.classes[class_id]
+                    .get_static(field_name)
+                    .unwrap();
+                BaseIR::IGetStatic(static_id)
+            }
+            FatOp::AGetStatic(class_name, field_name) => {
+                let class_id = exec_env.code_container.lookup_class(class_name);
+                println!("field_name:{field_name}");
+                let class_id = if let Some(class_id) = class_id {
+                    class_id
+                } else {
+                    return Err(UnmetDependency::NeedsClass(class_name.clone()));
+                };
+                let static_id = exec_env.code_container.classes[class_id]
+                    .get_static(field_name)
+                    .unwrap();
+                BaseIR::AGetStatic(static_id)
+            }
+            FatOp::SConst(string) => BaseIR::AConst(exec_env.const_string(string)),
             FatOp::Return => BaseIR::Return,
             FatOp::IReturn => BaseIR::IReturn,
             FatOp::FReturn => BaseIR::FReturn,
             FatOp::Dup => BaseIR::Dup,
             _ => todo!("Can't convert op {op:?} to base IR"),
         };
+        //println!("Op:{op:?} new_op:{newop:?}");
         newops.push(newop);
     }
     Ok(newops.into())
 }
-pub(crate) fn call<'caller,'env>(
-    ops: &[BaseIR],
-    mut ctx:ExecCtx
-) -> Result<Value, ExecException> 
-where 'caller: 'env
+pub(crate) fn call<'caller, 'env>(ops: &[BaseIR], mut ctx: ExecCtx) -> Result<Value, ExecException>
+where
+    'caller: 'env,
 {
     let mut op_index = 0;
     //let mut stack: Vec<Value> = Vec::with_capacity(100);
@@ -132,37 +172,38 @@ where 'caller: 'env
     //TODO: get actual number!
     //let max_locals = 100;
     //while locals.len() < max_locals as usize {
-        //locals.push(Value::Void);
+    //locals.push(Value::Void);
     //}
     loop {
         let op = &ops[op_index];
         //println!("op:{op:?} stack:{stack:?}");
         match op {
-            BaseIR::Dup=> {
-                let a:Value = ctx.stack_pop().unwrap().clone();
+            BaseIR::Dup => {
+                let a: Value = ctx.stack_pop().unwrap().clone();
                 ctx.stack_push(a);
                 ctx.stack_push(a);
             }
             BaseIR::IConst(value) => ctx.stack_push(Value::Int(*value)),
-            BaseIR::ILoad(index) => ctx.stack_push(ctx.get_local(*index).clone()),
-            BaseIR::FLoad(index) => ctx.stack_push(ctx.get_local(*index).clone()),
-            BaseIR::ALoad(index) => ctx.stack_push(ctx.get_local(*index).clone()),
+            BaseIR::AConst(value) => ctx.stack_push(Value::ObjectRef(*value)),
+            BaseIR::ILoad(index) => ctx.stack_push(ctx.get_local(*index).unwrap().clone()),
+            BaseIR::FLoad(index) => ctx.stack_push(ctx.get_local(*index).unwrap().clone()),
+            BaseIR::ALoad(index) => ctx.stack_push(ctx.get_local(*index).unwrap().clone()),
             BaseIR::IStore(index) => {
                 let a = ctx.stack_pop().unwrap();
-                ctx.set_local(*index,a.clone());
+                ctx.set_local(*index, a.clone());
             }
             BaseIR::FStore(index) => {
                 let a = ctx.stack_pop().unwrap();
-                ctx.set_local(*index,a.clone());
+                ctx.set_local(*index, a.clone());
             }
             BaseIR::IAdd => {
-              let b = ctx.stack_pop().unwrap().as_int().unwrap();
+                let b = ctx.stack_pop().unwrap().as_int().unwrap();
                 let a = ctx.stack_pop().unwrap().as_int().unwrap();
                 ctx.stack_push(Value::Int(a + b));
             }
             BaseIR::FAdd => {
                 let b = ctx.stack_pop().unwrap().as_float().unwrap();
-				let a = ctx.stack_pop().unwrap().as_float().unwrap();
+                let a = ctx.stack_pop().unwrap().as_float().unwrap();
                 ctx.stack_push(Value::Float(a + b));
             }
             BaseIR::ISub => {
@@ -172,7 +213,7 @@ where 'caller: 'env
             }
             BaseIR::FSub => {
                 let b = ctx.stack_pop().unwrap().as_float().unwrap();
-				let a = ctx.stack_pop().unwrap().as_float().unwrap();
+                let a = ctx.stack_pop().unwrap().as_float().unwrap();
                 ctx.stack_push(Value::Float(a - b));
             }
             BaseIR::IMul => {
@@ -182,7 +223,7 @@ where 'caller: 'env
             }
             BaseIR::FMul => {
                 let b = ctx.stack_pop().unwrap().as_float().unwrap();
-				let a = ctx.stack_pop().unwrap().as_float().unwrap();
+                let a = ctx.stack_pop().unwrap().as_float().unwrap();
                 ctx.stack_push(Value::Float(a * b));
             }
             BaseIR::IDiv => {
@@ -192,28 +233,27 @@ where 'caller: 'env
             }
             BaseIR::FDiv => {
                 let b = ctx.stack_pop().unwrap().as_float().unwrap();
-				let a = ctx.stack_pop().unwrap().as_float().unwrap();
-                //println!("Dividing {a}/{b}");
+                let a = ctx.stack_pop().unwrap().as_float().unwrap();
                 ctx.stack_push(Value::Float(a / b));
             }
             BaseIR::IRem => {
-              let b = ctx.stack_pop().unwrap().as_int().unwrap();
+                let b = ctx.stack_pop().unwrap().as_int().unwrap();
                 let a = ctx.stack_pop().unwrap().as_int().unwrap();
                 ctx.stack_push(Value::Int(a % b));
             }
-            BaseIR::FPutField(id) => {     
-                let val = ctx.stack_pop().unwrap();  
-                let obj_ref = ctx.stack_pop().unwrap();    
-                //println!("{obj_ref:?} val:{val:?}");
+            BaseIR::FPutField(id) => {
+                let val = ctx.stack_pop().unwrap();
+                let obj_ref = ctx.stack_pop().unwrap();
                 let obj_ref = obj_ref.as_objref().unwrap();
-                ctx.put_field(obj_ref,*id,val);
-                //obj.set_field(*id,val);
+                ctx.put_field(obj_ref, *id, val);
             }
             BaseIR::FGetField(id) => {
                 let obj_ref = ctx.stack_pop().unwrap().as_objref().unwrap();
-                let value = ctx.get_field(obj_ref,*id).unwrap();
-                //println!("getfield val:{value:?}");
+                let value = ctx.get_field(obj_ref, *id).unwrap();
                 ctx.stack_push(value);
+            }
+            BaseIR::AGetStatic(index)=>{
+                 ctx.stack_push(ctx.get_static(*index));
             }
             BaseIR::IReturn | BaseIR::FReturn => {
                 return Ok(ctx.stack_pop().unwrap());
@@ -221,13 +261,30 @@ where 'caller: 'env
             BaseIR::Return => {
                 return Ok(Value::Void);
             }
-            
             BaseIR::InvokeStatic(method_id, argc) => {
-                let mut args: Box<[Value]> = (0..*argc).map(|_| ctx.stack_pop().unwrap().clone()).collect();
+                let mut args: Box<[Value]> = (0..*argc)
+                    .map(|_| ctx.stack_pop().unwrap().clone())
+                    .collect();
                 args.reverse();
                 // Hack
                 let args = args;
-                let res:Value = ctx.invoke_method(&args,*method_id)?;
+                let res: Value = ctx.invoke_method(&args, *method_id)?;
+                if let Value::Void = res {
+                } else {
+                    ctx.stack_push(res)
+                };
+            } 
+            BaseIR::InvokeVirtual(method_id,argc) => {
+                let mut args: Box<[Value]> = (0..*argc)
+                    .map(|_| ctx.stack_pop().unwrap().clone())
+                    .collect();
+                args.reverse();
+             
+                println!("args:{args:?}");
+                let obj_ref = args[0].as_objref().unwrap();
+                let virtual_method = ctx.get_virtual(obj_ref,*method_id).unwrap();
+                todo!("virtual:{virtual_method:?}");
+                let res: Value = ctx.invoke_method(&args, *method_id)?;
                 if let Value::Void = res {
                 } else {
                     ctx.stack_push(res)

@@ -1,7 +1,7 @@
 use super::{field_descriptor_to_ftype, FieldType};
 use crate::importer::{opcodes::OpCode, ImportedJavaClass};
 use crate::IString;
-use crate::{mangle_method_name, method_desc_to_argc};
+use crate::{mangle_method_name,mangle_method_name_partial, method_desc_to_argc};
 fn fieldref_to_info(index: u16, class: &ImportedJavaClass) -> (FieldType, IString, IString) {
     let (field_class, nametype) = class.lookup_filed_ref(index).unwrap();
     let field_class = class.lookup_class(field_class).unwrap();
@@ -20,6 +20,17 @@ fn methodref_to_mangled_and_argc(index: u16, class: &ImportedJavaClass) -> (IStr
     //let method_id = self.code_container.lookup_or_insert_method(&mangled);
     let argc = method_desc_to_argc(&descriptor);
     (mangled, argc)
+}
+fn methodref_to_partial_mangled_and_argc(index: u16, class: &ImportedJavaClass) -> (IString,IString, u8) {
+    let (method_class, nametype) = class.lookup_method_ref(index).unwrap();
+    let (name, descriptor) = class.lookup_nametype(nametype).unwrap();
+    let method_class = class.lookup_class(method_class).unwrap();
+    let name = class.lookup_utf8(name).unwrap();
+    let descriptor = class.lookup_utf8(descriptor).unwrap();
+    let mangled = mangle_method_name_partial(name, descriptor);
+    //let method_id = self.code_container.lookup_or_insert_method(&mangled);
+    let argc = method_desc_to_argc(&descriptor);
+    (method_class.into(),mangled, argc)
 }
 #[derive(Debug)]
 pub(crate) enum FatOp {
@@ -45,7 +56,7 @@ pub(crate) enum FatOp {
     FDiv,
     InvokeSpecial(IString, u8),
     InvokeStatic(IString, u8),
-    InvokeVirtual(IString, u8),
+    InvokeVirtual(IString,IString, u8),
     ZGetStatic(IString, IString),
     BGetStatic(IString, IString),
     SGetStatic(IString, IString),
@@ -53,7 +64,7 @@ pub(crate) enum FatOp {
     LGetStatic(IString, IString),
     FGetStatic(IString, IString),
     DGetStatic(IString, IString),
-    OGetStatic(IString, IString),
+    AGetStatic(IString, IString),
     CGetStatic(IString, IString),
     ZGetField(IString, IString),
     BGetField(IString, IString),
@@ -62,7 +73,7 @@ pub(crate) enum FatOp {
     LGetField(IString, IString),
     FGetField(IString, IString),
     DGetField(IString, IString),
-    OGetField(IString, IString),
+    AGetField(IString, IString),
     CGetField(IString, IString),
     ZPutField(IString, IString),
     BPutField(IString, IString),
@@ -71,7 +82,7 @@ pub(crate) enum FatOp {
     LPutField(IString, IString),
     FPutField(IString, IString),
     DPutField(IString, IString),
-    OPutField(IString, IString),
+    APutField(IString, IString),
     CPutField(IString, IString),
     Dup,
     Return,
@@ -118,7 +129,7 @@ pub(crate) fn expand_ops(ops: &[(OpCode, u16)], class: &ImportedJavaClass) -> Bo
                     FieldType::Long => FatOp::LGetStatic(class, name),
                     FieldType::Float => FatOp::FGetStatic(class, name),
                     FieldType::Double => FatOp::DGetStatic(class, name),
-                    FieldType::ObjectRef => FatOp::OGetStatic(class, name),
+                    FieldType::ObjectRef => FatOp::AGetStatic(class, name),
                 }
             }
             OpCode::GetField(index) => {
@@ -132,7 +143,7 @@ pub(crate) fn expand_ops(ops: &[(OpCode, u16)], class: &ImportedJavaClass) -> Bo
                     FieldType::Long => FatOp::LGetField(class, name),
                     FieldType::Float => FatOp::FGetField(class, name),
                     FieldType::Double => FatOp::DGetField(class, name),
-                    FieldType::ObjectRef => FatOp::OGetField(class, name),
+                    FieldType::ObjectRef => FatOp::AGetField(class, name),
                 }
             }
             OpCode::PutField(index) => {
@@ -146,7 +157,7 @@ pub(crate) fn expand_ops(ops: &[(OpCode, u16)], class: &ImportedJavaClass) -> Bo
                     FieldType::Long => FatOp::LPutField(class, name),
                     FieldType::Float => FatOp::FPutField(class, name),
                     FieldType::Double => FatOp::DPutField(class, name),
-                    FieldType::ObjectRef => FatOp::OPutField(class, name),
+                    FieldType::ObjectRef => FatOp::APutField(class, name),
                 }
             }
             OpCode::Dup => FatOp::Dup,
@@ -160,8 +171,8 @@ pub(crate) fn expand_ops(ops: &[(OpCode, u16)], class: &ImportedJavaClass) -> Bo
                 FatOp::InvokeStatic(name, argc)
             }
             OpCode::InvokeVirtual(index) => {
-                let (name, argc) = methodref_to_mangled_and_argc(index, class);
-                FatOp::InvokeVirtual(name, argc)
+                let (class,name, argc) = methodref_to_partial_mangled_and_argc(index, class);
+                FatOp::InvokeVirtual(class,name, argc)
             }
             OpCode::Return => FatOp::Return,
             OpCode::FReturn => FatOp::FReturn,

@@ -3,6 +3,7 @@ use crate::importer::opcodes::OpCode;
 use std::collections::HashMap;
 mod executor;
 mod importer;
+mod stdlib;
 pub type ObjectRef = usize;
 pub type ClassRef = usize;
 use crate::executor::baseir::BaseIR;
@@ -13,26 +14,17 @@ enum Method {
     Invokable(Box<dyn Invokable>),
 }
 trait Invokable {
-    fn call(
-        &self,
-        args: &[Value],
-        memory: &mut EnvMemory,
-        code_container: &CodeContainer,
-    ) -> Result<Value, ExecException>;
+    fn call(&self, ctx: ExecCtx) -> Result<Value, ExecException>;
 }
 impl Method {
-    fn call(
-        &self,
-        ctx:ExecCtx
-    ) -> Result<Value, ExecException> {
+    fn call(&self, ctx: ExecCtx) -> Result<Value, ExecException> {
         match self {
-            //Self::Invokable(invokable) => invokable.call(args, memory, code_container),
+            Self::Invokable(invokable) => invokable.call(ctx),
             Method::BaseIR { ops } => executor::baseir::call(ops, ctx),
-            _=>todo!("Can't call externs yet!")
         }
     }
 }
-#[derive(Clone,Copy, Debug, PartialEq)]
+#[derive(Clone, Copy, Debug, PartialEq)]
 enum Value {
     Void,
     Int(i32),
@@ -54,66 +46,86 @@ impl Value {
     }
     fn as_objref(&self) -> Option<ObjectRef> {
         match self {
-            Value:: ObjectRef(id) => Some(*id),
+            Value::ObjectRef(id) => Some(*id),
             _ => None,
         }
     }
 }
 enum Object {
     Object {
-        class_id: usize,
+        class_id: ClassRef,
         values: Box<[Value]>,
     },
     String(IString),
 }
-impl Object{
-    pub fn set_field(&mut self,id:usize,value:Value){
-        //println!("seting field {id} to {value:?}");
+impl Object {
+    pub fn get_class(&self)->ClassRef{
         match self{
-             Self::Object {values,..}=>values[id] = value,
-             _=>(),
+            Self::Object{class_id,..}=>*class_id,
+            Self::String(_)=>todo!("Can't return string class yet!"),
         }
     }
-    pub fn get_field(&self,id:usize)->Option<Value>{
-        match self{
-             Self::Object {values,..}=>values.get(id).cloned(),
-             _=>None,
+    pub fn set_field(&mut self, id: usize, value: Value) {
+        //println!("seting field {id} to {value:?}");
+        match self {
+            Self::Object { values, .. } => values[id] = value,
+            _ => (),
+        }
+    }
+    pub fn get_field(&self, id: usize) -> Option<Value> {
+        match self {
+            Self::Object { values, .. } => values.get(id).cloned(),
+            _ => None,
         }
     }
 }
 struct EnvMemory {
     objects: Vec<Object>,
     statics: Vec<Value>,
-    lock:std::sync::Mutex<()>,
+    lock: std::sync::Mutex<()>,
 }
+const NULL_REF:ObjectRef = 0;
 impl EnvMemory {
-    fn new_obj(this:*mut Self,new_obj:Object)->ObjectRef{
-        unsafe{(*this).objects.push(new_obj)};
-        unsafe{(*this).objects.len() - 1}
-    }
-    fn get_static(this:*const Self,index:usize)->Value{
-        let lock = unsafe{(*this).lock.lock().expect("poisoned mutex!")};
-        let val = unsafe{(*this).statics[index]};
+    fn get_obj_class(this: *const Self, obj:ObjectRef)->ClassRef{
+        if obj == NULL_REF{
+            panic!("Null reference!");
+        }
+        let lock = unsafe { (*this).lock.lock().expect("poisoned mutex!") };
+        let val = unsafe { (*this).objects[obj].get_class() };
         drop(lock);
         val
     }
-    pub(crate) fn get_field(this:*const Self,obj_ref:ObjectRef,field_id:usize)->Option<Value>{
-        let lock = unsafe{(*this).lock.lock().expect("poisoned mutex!")};
-        let val = unsafe{(*this).objects[obj_ref].get_field(field_id)};
+    fn new_obj(this: *mut Self, new_obj: Object) -> ObjectRef {
+        unsafe { (*this).objects.push(new_obj) };
+        unsafe { (*this).objects.len() - 1 }
+    }
+    fn get_static(this: *const Self, index: usize) -> Value {
+        let lock = unsafe { (*this).lock.lock().expect("poisoned mutex!") };
+        let val = unsafe { (*this).statics[index] };
         drop(lock);
         val
     }
-    fn set_field(this:*mut Self,obj_ref:ObjectRef,field_id:usize,value:Value){
-        let lock = unsafe{(*this).lock.lock().expect("poisoned mutex!")};
-        unsafe{(*this).objects[obj_ref].set_field(field_id,value)};
+    pub(crate) fn get_field(
+        this: *const Self,
+        obj_ref: ObjectRef,
+        field_id: usize,
+    ) -> Option<Value> {
+        let lock = unsafe { (*this).lock.lock().expect("poisoned mutex!") };
+        let val = unsafe { (*this).objects[obj_ref].get_field(field_id) };
+        drop(lock);
+        val
+    }
+    fn set_field(this: *mut Self, obj_ref: ObjectRef, field_id: usize, value: Value) {
+        let lock = unsafe { (*this).lock.lock().expect("poisoned mutex!") };
+        unsafe { (*this).objects[obj_ref].set_field(field_id, value) };
         drop(lock);
     }
-    fn set_static(this:*mut Self,index:usize,value:Value){
-        let lock = unsafe{(*this).lock.lock().expect("poisoned mutex!")};
-        unsafe{(*this).statics[index] = value};
+    fn set_static(this: *mut Self, index: usize, value: Value) {
+        let lock = unsafe { (*this).lock.lock().expect("poisoned mutex!") };
+        unsafe { (*this).statics[index] = value };
         drop(lock);
     }
-    pub(crate) fn insert_static(&mut self,value:Value)->usize{
+    pub(crate) fn insert_static(&mut self, value: Value) -> usize {
         let lock = self.lock.lock().expect("poisoned mutex!");
         let index = self.statics.len();
         self.statics.push(value);
@@ -124,7 +136,7 @@ impl EnvMemory {
         Self {
             objects: Vec::with_capacity(0x100),
             statics: Vec::with_capacity(0x100),
-            lock:std::sync::Mutex::new(()),
+            lock: std::sync::Mutex::new(()),
         }
     }
 }
@@ -133,8 +145,13 @@ struct CodeContainer {
     class_names: HashMap<IString, usize>,
     methods: Vec<Option<Method>>,
     method_names: HashMap<IString, usize>,
+    static_strings:HashMap<IString,usize>,
 }
 impl CodeContainer {
+    fn get_virtual(&self,class:ClassRef,id:usize)->Option<usize>{
+        self.classes[class].get_virtual(id)
+    }
+    //pub fn lookup_virutal(&self,id:
     fn lookup_class(&self, name: &str) -> Option<usize> {
         //println!("class_names:{:?}",self.class_names);
         self.class_names.get(name).copied()
@@ -170,6 +187,7 @@ impl CodeContainer {
             classes,
             class_names,
             method_names,
+            static_strings:HashMap::new(),
         };
         res.set_or_replace_class("java/lang/Object", object_class);
         res
@@ -186,8 +204,11 @@ fn arg_counter() {
     assert_eq!(method_desc_to_argc("()I"), 0);
     assert_eq!(method_desc_to_argc("(I)I"), 1);
     assert_eq!(method_desc_to_argc("(IL)I"), 2);
-    assert_eq!(method_desc_to_argc("(ILF)I"), 3);
-    assert_eq!(method_desc_to_argc("(ILF)"), 3);
+    assert_eq!(method_desc_to_argc("(IJF)I"), 3);
+    assert_eq!(method_desc_to_argc("(IJF)"), 3);
+    assert_eq!(method_desc_to_argc("(Ljava/lang/Object;)V"),1);
+    assert_eq!(method_desc_to_argc("([[[D)V"),1);
+    //
 }
 fn method_desc_to_argc(desc: &str) -> u8 {
     assert_eq!(desc.chars().nth(0), Some('('));
@@ -202,15 +223,43 @@ fn method_desc_to_argc(desc: &str) -> u8 {
             char_end = index;
         }
     }
-    (char_end - char_beg - 1) as u8
+    let span = &desc[(char_beg + 1)..char_end];
+    let mut res = 0;
+    let mut ident = false;
+    for curr in span.chars(){
+        if ident{
+            if matches!(curr,';') {
+               ident = false; 
+            }
+            continue;
+        }
+        else if curr == 'L'{
+            ident = true;
+        }
+        else if curr == '['{
+            continue;
+        }
+        res += 1;
+    }
+    println!("span:{span},res{res}");
+    res as u8
 }
 fn mangle_method_name(class: &str, method: &str, desc: &str) -> IString {
     format!("{class}::{method}{desc}").into_boxed_str()
 }
+fn mangle_method_name_partial(method: &str, desc: &str) -> IString {
+    format!("{method}{desc}").into_boxed_str()
+}
 impl ExecEnv {
-    fn lookup_or_insert_static(&mut self, class: usize, static_field: &str) -> usize {
-        todo!("Can't insert statics yet!");
-    }
+    fn const_string(&mut self,string:&str)->ObjectRef{
+        *self.code_container.static_strings.entry(string.into()).or_insert_with(||{
+             let new_obj = Object::String(string.into());
+             let obj_ref:ObjectRef = EnvMemory::new_obj(&mut self.env_mem as *mut _, new_obj);
+             //Prevent GC from cleaning it up.
+             self.env_mem.insert_static(Value::ObjectRef(obj_ref));
+             obj_ref
+        })
+    }  
     pub fn new() -> Self {
         let env_mem = EnvMemory::new();
         let code_container = CodeContainer::new();
@@ -232,7 +281,6 @@ impl ExecEnv {
             return;
         };
         let fat = crate::executor::fatops::expand_ops(bytecode, &class);
-        println!("fat:{fat:?}");
         let baseir = crate::executor::baseir::into_base(&fat, self).unwrap();
         let max_locals = method.max_locals().unwrap();
         let (name, descriptor) = (method.name_index(), method.descriptor_index());
@@ -248,11 +296,14 @@ impl ExecEnv {
 
         self.code_container.methods[method_id] = Some(Method::BaseIR { ops: baseir });
     }
-    pub(crate) fn load_class(&mut self, class: crate::importer::ImportedJavaClass) {
-        let base_class = crate::executor::fatclass::expand_class(&class);
+    pub(crate) fn insert_class(&mut self, base_class: crate::executor::fatclass::FatClass) {
         let final_class = crate::executor::class::finalize(&base_class, self).unwrap();
         self.code_container
             .set_or_replace_class(base_class.class_name(), final_class);
+    }
+    pub(crate) fn load_class(&mut self, class: crate::importer::ImportedJavaClass) {
+        let base_class = crate::executor::fatclass::expand_class(&class);
+        self.insert_class(base_class);
         for method in class.methods() {
             self.load_method(method, &class);
         }
@@ -263,18 +314,18 @@ impl ExecEnv {
     pub(crate) fn lookup_class(&self, class_name: &str) -> Option<usize> {
         self.code_container.lookup_class(class_name)
     }
-    pub(crate) fn new_obj(&mut self,class:ClassRef) -> ObjectRef{
+    pub(crate) fn new_obj(&mut self, class: ClassRef) -> ObjectRef {
         let new_obj = self.code_container.classes[class].new();
-        EnvMemory::new_obj(&mut self.env_mem as *mut _,new_obj)
+        EnvMemory::new_obj(&mut self.env_mem as *mut _, new_obj)
     }
-    pub(crate) fn call_method(
+    pub fn call_method(
         &mut self,
         method_id: usize,
         args: &[Value],
     ) -> Result<Value, ExecException> {
         let mut args: Vec<_> = args.into();
-                //args.reverse();
-        let e_ctx = executor::ExecCtx::new(&mut self.env_mem,&self.code_container,&args,6);
+        //args.reverse();
+        let e_ctx = executor::ExecCtx::new(&mut self.env_mem, &self.code_container, &args, 6);
         //todo!();
         let method = self.code_container.methods.get(method_id);
         method
@@ -282,6 +333,9 @@ impl ExecEnv {
             .as_ref()
             .ok_or(ExecException::MethodNotFound)?
             .call(e_ctx)
+    }
+    fn insert_stdlib(&mut self) {
+        stdlib::insert_all(self);
     }
 }
 #[derive(Debug)]
@@ -380,23 +434,15 @@ fn basic_arthm() {
 struct AddFiveInvokable;
 struct SqrtInvokable;
 impl Invokable for AddFiveInvokable {
-    fn call(
-        &self,
-        args: &[Value],
-        memory: &mut EnvMemory,
-        code_container: &CodeContainer,
-    ) -> Result<Value, ExecException> {
-        Ok(Value::Int(args[0].as_int().unwrap() + 5))
+    fn call(&self, ctx: ExecCtx) -> Result<Value, ExecException> {
+        Ok(Value::Int(ctx.get_local(0).unwrap().as_int().unwrap() + 5))
     }
 }
 impl Invokable for SqrtInvokable {
-    fn call(
-        &self,
-        args: &[Value],
-        memory: &mut EnvMemory,
-        code_container: &CodeContainer,
-    ) -> Result<Value, ExecException> {
-        Ok(Value::Float(args[0].as_float().unwrap().sqrt()))
+    fn call(&self, ctx: ExecCtx) -> Result<Value, ExecException> {
+        Ok(Value::Float(
+            ctx.get_local(0).unwrap().as_float().unwrap().sqrt(),
+        ))
     }
 }
 #[test]
@@ -509,8 +555,8 @@ fn exec_hw() {
     let mut file = std::fs::File::open("test/HelloWorld.class").unwrap();
     let class = crate::importer::load_class(&mut file).unwrap();
     let mut exec_env = ExecEnv::new();
+    exec_env.insert_stdlib();
     exec_env.load_class(class);
-
     let hw = exec_env
         .lookup_method(&mangle_method_name(
             "HelloWorld",
@@ -526,7 +572,7 @@ fn fields() {
     let class = crate::importer::load_class(&mut file).unwrap();
     let mut exec_env = ExecEnv::new();
     exec_env.load_class(class);
-    
+
     //let hw = exec_env.lookup_method(&mangle_method_name("HelloWorld","main","([Ljava/lang/String;)V")).unwrap();
     //exec_env.call_method(hw,&[]).unwrap();
 }
@@ -552,15 +598,33 @@ fn gravity() {
         .lookup_method(&mangle_method_name("Gravity", "GetY", "()F"))
         .unwrap();
     let class = exec_env.lookup_class("Gravity").unwrap();
-     let sqrt_extern_call = exec_env
+    let sqrt_extern_call = exec_env
         .lookup_method(&mangle_method_name("Gravity", "Sqrt", "(F)F"))
         .unwrap();
     exec_env.code_container.methods[sqrt_extern_call] =
         Some(Method::Invokable(Box::new(SqrtInvokable)));
     let obj = exec_env.new_obj(class);
-    exec_env.call_method(set, &[Value::ObjectRef(obj),Value::Float(0.43),Value::Float(203.23)]).unwrap();
-    exec_env.call_method(set_vel, &[Value::ObjectRef(obj),Value::Float(0.06125),Value::Float(0.0)]).unwrap();
-    for i in 0..10_000{
+    exec_env
+        .call_method(
+            set,
+            &[
+                Value::ObjectRef(obj),
+                Value::Float(0.43),
+                Value::Float(203.23),
+            ],
+        )
+        .unwrap();
+    exec_env
+        .call_method(
+            set_vel,
+            &[
+                Value::ObjectRef(obj),
+                Value::Float(0.06125),
+                Value::Float(0.0),
+            ],
+        )
+        .unwrap();
+    for i in 0..10_000 {
         /*
         if i % 100 == 0{
             let x = exec_env.call_method(getx, &[Value::ObjectRef(obj)]).unwrap().as_float().unwrap();
@@ -568,9 +632,10 @@ fn gravity() {
             println!("({x},{y})");
         }*/
         //println!("Calling Tick!");
-        exec_env.call_method(tick, &[Value::ObjectRef(obj)]).unwrap();
+        exec_env
+            .call_method(tick, &[Value::ObjectRef(obj)])
+            .unwrap();
         //println!("Calling GetX!");
-        
     }
     panic!();
 }
