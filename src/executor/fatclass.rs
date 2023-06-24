@@ -43,6 +43,16 @@ pub(crate) fn expand_class(class: &ImportedJavaClass) -> FatClass {
     let super_name: IString = class.lookup_class(super_class).unwrap().into();
     let mut fields: Vec<(IString, FieldType)> = Vec::with_capacity(class.fields().len());
     let mut static_fields: Vec<(IString, FieldType)> = Vec::with_capacity(class.fields().len());
+    let mut virtuals = Vec::new();
+    for method in class.methods(){
+        //Not static, so virtual.
+        if method.is_virtual(class){
+            let virtual_name = method.virtual_name(class);
+            let real_name = method.mangled_name(class);
+            //todo!("VNAME:{virtual_name},RNAME:{real_name}");
+            virtuals.push((virtual_name,real_name));
+        }
+    }
     for field in class.fields() {
         let (name_index, descriptor_index) = (field.name_index, field.descriptor_index);
         let name = class.lookup_utf8(name_index).unwrap();
@@ -58,7 +68,7 @@ pub(crate) fn expand_class(class: &ImportedJavaClass) -> FatClass {
         class_name,
         super_name,
         fields,
-        virtuals:Vec::new(),
+        virtuals,
         static_fields,
     }
 }

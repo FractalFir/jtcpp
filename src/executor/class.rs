@@ -2,8 +2,9 @@ use super::{fatclass::FatClass, FieldType, UnmetDependency};
 use crate::ExecEnv;
 use crate::{IString, Object};
 use std::collections::HashMap;
+use crate::ClassRef;
 pub(crate) struct Class {
-    class_id: usize,
+    class_id: ClassRef,
     virtual_methods: Box<[usize]>,
     virtual_map:HashMap<IString,usize>,
     //statics: Box<[usize]>,
@@ -12,6 +13,11 @@ pub(crate) struct Class {
     field_types: Box<[FieldType]>,
 }
 impl Class {
+    //Call *ONLY* once per class, when after adding it to CodeContainer!
+    pub(crate) fn set_id(&mut self,id:ClassRef){
+        assert_eq!(self.class_id,0,"Tried to set class id after linknig!");
+        self.class_id = id;
+    }
     pub(crate) fn get_virtual(&self, virtual_id:usize)->Option<usize>{
         self.virtual_methods.get(virtual_id).copied()
     }

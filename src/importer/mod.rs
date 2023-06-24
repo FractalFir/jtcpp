@@ -53,6 +53,26 @@ pub(crate) struct Method {
     attributes: Box<[Attribute]>,
 }
 impl Method {
+    pub(crate) fn mangled_name(&self,class:&ImportedJavaClass)->IString{
+        format!("{}::{}{}",class.lookup_class(class.this_class()).unwrap(),self.name(class),self.descriptor(class)).into()
+    }
+    pub(crate) fn virtual_name(&self,class:&ImportedJavaClass)->IString{
+        format!("{}{}",self.name(class),self.descriptor(class)).into()
+    }
+    pub(crate) fn name<'a>(&'a self,class:&'a ImportedJavaClass)->&str{
+        class.lookup_utf8(self.name_index).unwrap()
+    }
+     pub(crate) fn descriptor<'a>(&'a self,class:&'a ImportedJavaClass)->&str{
+        class.lookup_utf8(self.descriptor_index).unwrap()
+    }
+    pub(crate) fn is_virtual(&self,class:&ImportedJavaClass)->bool{
+        if self.access_flags.is_static(){
+           false
+        }
+        else{
+            !self.name(class).contains('<')
+        }
+    }
     pub(crate) fn access_flags(&self) -> &AccessFlags {
         &self.access_flags
     }
@@ -268,6 +288,15 @@ impl AccessFlags {
     fn is_public(&self) -> bool {
         self.mask & 0x0001 != 0
     }
+    fn is_private(&self) -> bool {
+        self.mask & 0x0002 != 0
+    }
+    fn is_protected(&self) -> bool{
+        self.mask & 0x0004 != 0
+    }
+    pub fn is_static(&self) -> bool{
+        self.mask & 0x0008 != 0
+    }
     fn is_final(&self) -> bool {
         self.mask & 0x0010 != 0
     }
@@ -279,9 +308,6 @@ impl AccessFlags {
     }
     fn is_abstract(&self) -> bool {
         self.mask & 0x0400 != 0
-    }
-    pub fn is_static(&self) -> bool {
-        self.mask & 0x0008 != 0
     }
     fn is_synthetic(&self) -> bool {
         self.mask & 0x1000 != 0

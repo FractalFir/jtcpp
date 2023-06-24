@@ -6,6 +6,7 @@ pub(crate) enum OpCode {
     FLoad(u8),
     ILoad(u8),
     DConst(f64),
+    FConst(f32),
     IConst(i32),
     AConstNull,
     AStore(u8),
@@ -50,13 +51,15 @@ pub(crate) enum OpCode {
     New(u16),
     ANewArray(u16),
     BIPush,
-    CheckCast(u16),
     ArrayLength,
     Throw,
     AALoad,
     BALoad,
     AAStore,
     AReturn,
+    CheckCast(u16),
+    F2D,//Float to double
+    D2F,
 }
 pub(crate) fn load_ops<R: std::io::Read>(
     src: &mut R,
@@ -75,6 +78,9 @@ pub(crate) fn load_ops<R: std::io::Read>(
             0xf => OpCode::DConst(1.0),
             0x10 => OpCode::BIPush,
             0x2..=0x8 => OpCode::IConst(op as i32 - 0x3),
+            0xb => OpCode::FConst(0.0),
+            0xc => OpCode::FConst(1.0),
+            0xd => OpCode::FConst(2.0),
             0x12 => {
                 let constant_pool_index = load_u8(src)?;
                 curr_offset += 1;
@@ -90,6 +96,11 @@ pub(crate) fn load_ops<R: std::io::Read>(
                 curr_offset += 1;
                 OpCode::ILoad(index)
             }
+            0x17 =>{
+                let index = load_u8(src)?;
+                curr_offset += 1;
+                OpCode::FLoad(index)
+            }
             0x19 => {
                 let index = load_u8(src)?;
                 curr_offset += 1;
@@ -104,6 +115,11 @@ pub(crate) fn load_ops<R: std::io::Read>(
                 let index = load_u8(src)?;
                 curr_offset += 1;
                 OpCode::IStore(index)
+            }
+            0x38 => {
+                let index = load_u8(src)?;
+                curr_offset += 1;
+                OpCode::FStore(index)
             }
             0x3b..=0x3e => OpCode::IStore(op - 0x3b),
             0x43..=0x46 => OpCode::FStore(op - 0x43),
@@ -134,6 +150,8 @@ pub(crate) fn load_ops<R: std::io::Read>(
                 curr_offset += 2;
                 OpCode::IInc(var, incr)
             }
+            0x8d =>OpCode::F2D,
+            0x90=>OpCode::D2F,
             0x99 => {
                 let offset = load_i16(src)?;
                 curr_offset += 2;

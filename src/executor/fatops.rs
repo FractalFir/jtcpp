@@ -43,6 +43,7 @@ pub(crate) enum FatOp {
     FLoad(u8),
     DLoad(u8),
     ILoad(u8),
+    AStore(u8),
     IStore(u8),
     FStore(u8),
     IAdd,
@@ -85,9 +86,15 @@ pub(crate) enum FatOp {
     APutField(IString, IString),
     CPutField(IString, IString),
     Dup,
+    Pop,
     Return,
+    AReturn,
     FReturn,
     IReturn,
+    F2D,
+    D2F,
+    New(IString),
+    ANewArray(IString),
 }
 pub(crate) fn expand_ops(ops: &[(OpCode, u16)], class: &ImportedJavaClass) -> Box<[FatOp]> {
     let mut fatops = Vec::with_capacity(ops.len());
@@ -104,6 +111,9 @@ pub(crate) fn expand_ops(ops: &[(OpCode, u16)], class: &ImportedJavaClass) -> Bo
                 }
             }
             OpCode::IConst(int) => FatOp::IConst(int),
+            OpCode::FConst(float) => FatOp::FConst(float),
+            OpCode::F2D=>FatOp::F2D,
+            OpCode::D2F=>FatOp::D2F,
             OpCode::ISub => FatOp::ISub,
             OpCode::FSub => FatOp::FSub,
             OpCode::IAdd => FatOp::IAdd,
@@ -115,6 +125,7 @@ pub(crate) fn expand_ops(ops: &[(OpCode, u16)], class: &ImportedJavaClass) -> Bo
             OpCode::IRem => FatOp::IRem,
             OpCode::ALoad(index) => FatOp::ALoad(index),
             OpCode::ILoad(index) => FatOp::ILoad(index),
+            OpCode::AStore(index) => FatOp::AStore(index),
             OpCode::IStore(index) => FatOp::IStore(index),
             OpCode::FStore(index) => FatOp::FStore(index),
             OpCode::FLoad(index) => FatOp::FLoad(index),
@@ -160,7 +171,16 @@ pub(crate) fn expand_ops(ops: &[(OpCode, u16)], class: &ImportedJavaClass) -> Bo
                     FieldType::ObjectRef => FatOp::APutField(class, name),
                 }
             }
+            OpCode::New(index)=>{
+                let class_name = class.lookup_class(index).unwrap();
+                FatOp::New(class_name.into())
+            }
+            OpCode::ANewArray(index)=>{
+                let class_name = class.lookup_class(index).unwrap();
+                FatOp::ANewArray(class_name.into())
+            }
             OpCode::Dup => FatOp::Dup,
+            OpCode::Pop => FatOp::Pop,
             ///TODO: handle non-static methods(change argc by 1)
             OpCode::InvokeSpecial(index) => {
                 let (name, argc) = methodref_to_mangled_and_argc(index, class);
@@ -172,9 +192,10 @@ pub(crate) fn expand_ops(ops: &[(OpCode, u16)], class: &ImportedJavaClass) -> Bo
             }
             OpCode::InvokeVirtual(index) => {
                 let (class,name, argc) = methodref_to_partial_mangled_and_argc(index, class);
-                FatOp::InvokeVirtual(class,name, argc)
+                FatOp::InvokeVirtual(class,name, argc + 1)
             }
             OpCode::Return => FatOp::Return,
+            OpCode::AReturn => FatOp::AReturn,
             OpCode::FReturn => FatOp::FReturn,
             OpCode::IReturn => FatOp::IReturn,
             _ => todo!("can't expand op {op:?}"),

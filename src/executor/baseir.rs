@@ -2,19 +2,22 @@ use super::ExecCtx;
 use super::UnmetDependency;
 use crate::executor::fatops::FatOp;
 use crate::ExecEnv;
+use crate::ClassRef;
 use crate::{CodeContainer, EnvMemory, ExecException, Value};
 #[derive(Debug)]
 pub(crate) enum BaseIR {
     Dup,
+    Pop,
+    AConst(usize),
+    DConst(f64),
+    FConst(f32),
     IConst(i32),
     LConst(i32),
-    AConst(usize),
-    FConst(f32),
-    DConst(f64),
     ALoad(u8),
     FLoad(u8),
     DLoad(u8),
     ILoad(u8),
+    AStore(u8),
     IStore(u8),
     FStore(u8),
     IAdd,
@@ -57,8 +60,12 @@ pub(crate) enum BaseIR {
     APutField(usize),
     CPutField(usize),
     Return,
+    AReturn,
     IReturn,
     FReturn,
+    F2D,
+    D2F,
+    New(ClassRef),
 }
 pub(crate) fn into_base(
     fat: &[FatOp],
@@ -68,6 +75,7 @@ pub(crate) fn into_base(
     let mut newops = Vec::with_capacity(fat.len());
     for op in fat {
         let newop = match op {
+            FatOp::FConst(float) => BaseIR::FConst(*float),
             FatOp::IConst(int) => BaseIR::IConst(*int),
             FatOp::ISub => BaseIR::ISub,
             FatOp::FSub => BaseIR::FSub,
@@ -78,8 +86,11 @@ pub(crate) fn into_base(
             FatOp::IDiv => BaseIR::IDiv,
             FatOp::FDiv => BaseIR::FDiv,
             FatOp::IRem => BaseIR::IRem,
+            FatOp::F2D => BaseIR::F2D,
+            FatOp::D2F => BaseIR::D2F,
             FatOp::ALoad(index) => BaseIR::ALoad(*index),
             FatOp::ILoad(index) => BaseIR::ILoad(*index),
+            FatOp::AStore(index) => BaseIR::AStore(*index),
             FatOp::IStore(index) => BaseIR::IStore(*index),
             FatOp::FStore(index) => BaseIR::FStore(*index),
             FatOp::FLoad(index) => BaseIR::FLoad(*index),
@@ -113,6 +124,18 @@ pub(crate) fn into_base(
                     .unwrap();
                 BaseIR::FGetField(field_id)
             }
+            FatOp::AGetField(class_name, field_name) => {
+                let class_id = exec_env.code_container.lookup_class(class_name);
+                let class_id = if let Some(class_id) = class_id {
+                    class_id
+                } else {
+                    return Err(UnmetDependency::NeedsClass(class_name.clone()));
+                };
+                let (field_id, _ftype) = exec_env.code_container.classes[class_id]
+                    .get_field(field_name)
+                    .unwrap();
+                BaseIR::AGetField(field_id)
+            }
             FatOp::FPutField(class_name, field_name) => {
                 let class_id = exec_env.code_container.lookup_class(class_name);
                 let class_id = if let Some(class_id) = class_id {
@@ -124,6 +147,18 @@ pub(crate) fn into_base(
                     .get_field(field_name)
                     .unwrap();
                 BaseIR::FPutField(field_id)
+            }
+            FatOp::APutField(class_name, field_name) => {
+                let class_id = exec_env.code_container.lookup_class(class_name);
+                let class_id = if let Some(class_id) = class_id {
+                    class_id
+                } else {
+                    return Err(UnmetDependency::NeedsClass(class_name.clone()));
+                };
+                let (field_id, _ftype) = exec_env.code_container.classes[class_id]
+                    .get_field(field_name)
+                    .unwrap();
+                BaseIR::APutField(field_id)
             }
             FatOp::IGetStatic(class_name, field_name) => {
                 let class_id = exec_env.code_container.lookup_class(class_name);
@@ -139,7 +174,6 @@ pub(crate) fn into_base(
             }
             FatOp::AGetStatic(class_name, field_name) => {
                 let class_id = exec_env.code_container.lookup_class(class_name);
-                println!("field_name:{field_name}");
                 let class_id = if let Some(class_id) = class_id {
                     class_id
                 } else {
@@ -150,11 +184,22 @@ pub(crate) fn into_base(
                     .unwrap();
                 BaseIR::AGetStatic(static_id)
             }
+            FatOp::New(class_name) =>{
+                let class_id = exec_env.code_container.lookup_class(class_name);
+                let class_id = if let Some(class_id) = class_id {
+                    class_id
+                } else {
+                    return Err(UnmetDependency::NeedsClass(class_name.clone()));
+                };
+                BaseIR::New(class_id)
+            },
             FatOp::SConst(string) => BaseIR::AConst(exec_env.const_string(string)),
             FatOp::Return => BaseIR::Return,
+            FatOp::AReturn => BaseIR::AReturn,
             FatOp::IReturn => BaseIR::IReturn,
             FatOp::FReturn => BaseIR::FReturn,
             FatOp::Dup => BaseIR::Dup,
+            FatOp::Pop => BaseIR::Pop,
             _ => todo!("Can't convert op {op:?} to base IR"),
         };
         //println!("Op:{op:?} new_op:{newop:?}");
@@ -279,12 +324,10 @@ where
                     .map(|_| ctx.stack_pop().unwrap().clone())
                     .collect();
                 args.reverse();
-             
-                println!("args:{args:?}");
                 let obj_ref = args[0].as_objref().unwrap();
                 let virtual_method = ctx.get_virtual(obj_ref,*method_id).unwrap();
-                todo!("virtual:{virtual_method:?}");
-                let res: Value = ctx.invoke_method(&args, *method_id)?;
+                //todo!("virtual:{virtual_method:?}");
+                let res: Value = ctx.invoke_method(&args, virtual_method)?;
                 if let Value::Void = res {
                 } else {
                     ctx.stack_push(res)

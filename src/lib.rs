@@ -6,6 +6,8 @@ mod importer;
 mod stdlib;
 pub type ObjectRef = usize;
 pub type ClassRef = usize;
+pub type StaticRef = usize;
+pub type MethodRef = usize;
 use crate::executor::baseir::BaseIR;
 use executor::class::Class;
 use executor::ExecCtx;
@@ -51,6 +53,7 @@ impl Value {
         }
     }
 }
+#[derive(Debug)]
 enum Object {
     Object {
         class_id: ClassRef,
@@ -59,6 +62,12 @@ enum Object {
     String(IString),
 }
 impl Object {
+    pub fn to_string(&self)->Option<IString>{
+        match self{
+            Self::Object{..}=>todo!("Can convert only strings to strings"),
+            Self::String(string)=>Some(string.to_owned()),
+        }
+    }
     pub fn get_class(&self)->ClassRef{
         match self{
             Self::Object{class_id,..}=>*class_id,
@@ -86,11 +95,19 @@ struct EnvMemory {
 }
 const NULL_REF:ObjectRef = 0;
 impl EnvMemory {
+    fn to_string(this: *mut Self, obj_ref: ObjectRef)->Option<IString> {
+        let lock = unsafe { (*this).lock.lock().expect("poisoned mutex!") };
+        let obj = unsafe { &(*this).objects[obj_ref]};
+        let res = obj.to_string();
+        drop(lock);
+        res
+    }
     fn get_obj_class(this: *const Self, obj:ObjectRef)->ClassRef{
         if obj == NULL_REF{
             panic!("Null reference!");
         }
         let lock = unsafe { (*this).lock.lock().expect("poisoned mutex!") };
+        //unsafe{println!("objs:{:?}",(*this).objects)};
         let val = unsafe { (*this).objects[obj].get_class() };
         drop(lock);
         val
@@ -99,7 +116,7 @@ impl EnvMemory {
         unsafe { (*this).objects.push(new_obj) };
         unsafe { (*this).objects.len() - 1 }
     }
-    fn get_static(this: *const Self, index: usize) -> Value {
+    fn get_static(this: *const Self, index: StaticRef) -> Value {
         let lock = unsafe { (*this).lock.lock().expect("poisoned mutex!") };
         let val = unsafe { (*this).statics[index] };
         drop(lock);
@@ -120,7 +137,7 @@ impl EnvMemory {
         unsafe { (*this).objects[obj_ref].set_field(field_id, value) };
         drop(lock);
     }
-    fn set_static(this: *mut Self, index: usize, value: Value) {
+    fn set_static(this: *mut Self, index: StaticRef, value: Value) {
         let lock = unsafe { (*this).lock.lock().expect("poisoned mutex!") };
         unsafe { (*this).statics[index] = value };
         drop(lock);
@@ -156,7 +173,7 @@ impl CodeContainer {
         //println!("class_names:{:?}",self.class_names);
         self.class_names.get(name).copied()
     }
-    fn set_or_replace_class(&mut self, name: &str, class: Class) -> usize {
+    fn set_or_replace_class(&mut self, name: &str, mut class: Class) -> usize {
         let idx = *self
             .class_names
             .entry(name.to_owned().into_boxed_str())
@@ -164,6 +181,7 @@ impl CodeContainer {
                 self.classes.push(Class::empty());
                 self.classes.len() - 1
             });
+        class.set_id(idx);
         self.classes[idx] = class;
         idx
     }
@@ -241,7 +259,7 @@ fn method_desc_to_argc(desc: &str) -> u8 {
         }
         res += 1;
     }
-    println!("span:{span},res{res}");
+    //println!("span:{span},res{res}");
     res as u8
 }
 fn mangle_method_name(class: &str, method: &str, desc: &str) -> IString {
@@ -264,10 +282,14 @@ impl ExecEnv {
         let env_mem = EnvMemory::new();
         let code_container = CodeContainer::new();
         //let objects = vec!
-        Self {
+        let mut res = Self {
             code_container,
             env_mem,
-        }
+        };
+        let obj_class = res.lookup_class("java/lang/Object").unwrap();
+        let null_obj = res.new_obj(obj_class);
+        res.env_mem.insert_static(Value::ObjectRef(null_obj));
+        res
     }
     pub(crate) fn load_method(
         &mut self,
@@ -296,10 +318,10 @@ impl ExecEnv {
 
         self.code_container.methods[method_id] = Some(Method::BaseIR { ops: baseir });
     }
-    pub(crate) fn insert_class(&mut self, base_class: crate::executor::fatclass::FatClass) {
+    pub(crate) fn insert_class(&mut self, base_class: crate::executor::fatclass::FatClass)->ClassRef {
         let final_class = crate::executor::class::finalize(&base_class, self).unwrap();
         self.code_container
-            .set_or_replace_class(base_class.class_name(), final_class);
+            .set_or_replace_class(base_class.class_name(), final_class)
     }
     pub(crate) fn load_class(&mut self, class: crate::importer::ImportedJavaClass) {
         let base_class = crate::executor::fatclass::expand_class(&class);
@@ -308,8 +330,11 @@ impl ExecEnv {
             self.load_method(method, &class);
         }
     }
-    pub(crate) fn lookup_method(&self, method_name: &str) -> Option<usize> {
+    pub(crate) fn lookup_method(&self, method_name: &str) -> Option<MethodRef> {
         self.code_container.method_names.get(method_name).copied()
+    }
+    pub(crate) fn replace_method_with_extern<T:Invokable + 'static>(&mut self, methodref:MethodRef,extern_fn:T){
+        self.code_container.methods[methodref] = Some(Method::Invokable(Box::new(extern_fn)));
     }
     pub(crate) fn lookup_class(&self, class_name: &str) -> Option<usize> {
         self.code_container.lookup_class(class_name)
@@ -317,6 +342,12 @@ impl ExecEnv {
     pub(crate) fn new_obj(&mut self, class: ClassRef) -> ObjectRef {
         let new_obj = self.code_container.classes[class].new();
         EnvMemory::new_obj(&mut self.env_mem as *mut _, new_obj)
+    }
+    pub(crate) fn get_static_id(&mut self, class:ClassRef, name:&str)->Option<StaticRef>{
+        self.code_container.classes[class].get_static(name)
+    }
+    pub(crate)fn set_static(&mut self, index: StaticRef, value: Value) {
+        EnvMemory::set_static(&mut self.env_mem as *mut _, index,value)
     }
     pub fn call_method(
         &mut self,
@@ -565,6 +596,7 @@ fn exec_hw() {
         ))
         .unwrap();
     exec_env.call_method(hw, &[]).unwrap();
+    panic!();
 }
 #[test]
 fn fields() {
@@ -648,6 +680,19 @@ fn extends() {
     let mut exec_env = ExecEnv::new();
     exec_env.load_class(super_class);
     exec_env.load_class(class);
+}
+#[test]
+fn nbody() {
+    let mut file = std::fs::File::open("test/nbody/Vector3.class").unwrap();
+    let vec3_class = crate::importer::load_class(&mut file).unwrap();
+    let mut file = std::fs::File::open("test/nbody/Planet.class").unwrap();
+    let planet_class = crate::importer::load_class(&mut file).unwrap();
+    let mut file = std::fs::File::open("test/nbody/NBody.class").unwrap();
+    let nbody_class = crate::importer::load_class(&mut file).unwrap();
+    let mut exec_env = ExecEnv::new();
+    exec_env.load_class(vec3_class);
+    exec_env.load_class(planet_class);
+    exec_env.load_class(nbody_class);
 }
 /*
 #[test]

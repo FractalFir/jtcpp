@@ -65,6 +65,9 @@ fn ref_to_cell<T>(ptr: &mut T) -> &UnsafeCell<T> {
 use crate::ClassRef;
 //-> Result<Value, ExecException>
 impl<'env> ExecCtx<'env> {
+    pub fn to_string(&self,objref:ObjectRef)->Option<IString>{
+        unsafe { EnvMemory::to_string(self.memory.get(), objref) }
+    }
     pub fn get_virtual(&self,objref:ObjectRef,id:usize)->Option<usize>{
         let obj_class = self.get_obj_class(objref);
         self.code_container.get_virtual(obj_class,id)
@@ -146,6 +149,7 @@ impl<'env> ExecCtx<'env> {
         args: &'caller [Value],
         method_id: usize,
     ) -> Result<Value, ExecException> {
+        //println!("Invoking {method_id}");
         let method = self
             .code_container
             .methods
