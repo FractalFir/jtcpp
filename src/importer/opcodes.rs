@@ -30,6 +30,7 @@ pub(crate) enum OpCode {
     InvokeStatic(u16),
     InvokeDynamic(u16),
     Return,
+    AReturn,
     IReturn,
     FReturn,
     LReturn,
@@ -57,10 +58,15 @@ pub(crate) enum OpCode {
     AALoad,
     BALoad,
     AAStore,
-    AReturn,
     CheckCast(u16),
     F2D,//Float to double
     D2F,
+}
+impl OpCode{
+    //Checks if op is a valid method terminator(return or throw). 
+    fn is_term(&self)->bool{
+        matches!(self,Self::Return | Self::AReturn | Self::IReturn | Self::FReturn | Self::LReturn | Self::Throw)
+    }
 }
 pub(crate) fn load_ops<R: std::io::Read>(
     src: &mut R,
@@ -265,6 +271,8 @@ pub(crate) fn load_ops<R: std::io::Read>(
         ops.push((decoded_op, op_offset));
         //println!("{decoded_op:?}");
     }
+    //Check if last op is a return or throw(Useful sanity-check to catch some mistakes early.
+    assert!(ops[ops.len() - 1].0.is_term(),"ops:{ops:?}");
     //println!("ops:{ops:?}");
     Ok(ops)
 }

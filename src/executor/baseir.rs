@@ -258,6 +258,10 @@ where
                 let new_arr = ctx.new_array(Value::ObjectRef(0),length);
                 ctx.stack_push(Value::ObjectRef(new_arr));
             },
+            BaseIR::ArrayLength =>{
+                let arr = ctx.stack_pop().unwrap().as_objref().unwrap() as usize;
+                ctx.stack_push(Value::Int(ctx.get_array_length(arr) as i32));
+            }
             BaseIR::Dup => {
                 let a: Value = ctx.stack_pop().unwrap().clone();
                 ctx.stack_push(a);

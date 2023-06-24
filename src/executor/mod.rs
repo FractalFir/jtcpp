@@ -75,6 +75,9 @@ impl<'env> ExecCtx<'env> {
     pub fn get_obj_class(&self, objref:ObjectRef)->ClassRef{
          unsafe { EnvMemory::get_obj_class(self.memory.get(),objref) }
     }
+    pub fn get_array_length(&self, arrref:ObjectRef)->usize{
+         unsafe { EnvMemory::get_array_length(self.memory.get(),arrref) }
+    }
     pub fn get_local(&self, id: u8) -> Option<Value> {
         Some(unsafe {
             **self

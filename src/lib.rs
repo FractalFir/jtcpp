@@ -59,7 +59,7 @@ enum Object {
         class_id: ClassRef,
         values: Box<[Value]>,
     },
-    ANewArray{
+    Array{
         //array_class_id:ClassRef,
         //element_class_id:ClassRef,
         values:Box<[Value]>,
@@ -67,18 +67,24 @@ enum Object {
     String(IString),
 }
 impl Object {
+    pub(crate) fn get_array_length(&self) -> usize{
+        match self{
+            Self::Array {values, .. } => values.len(),
+            _=>0,
+        }
+    }
     pub fn to_string(&self)->Option<IString>{
         match self{
             Self::Object{..}=>todo!("Can convert only strings to strings"),
             Self::String(string)=>Some(string.to_owned()),
-            Self::ANewArray { .. } => todo!("Can't convert arrays to string!"),
+            Self::Array { .. } => todo!("Can't convert arrays to string!"),
         }
     }
     pub fn get_class(&self)->ClassRef{
         match self{
             Self::Object{class_id,..}=>*class_id,
             Self::String(_)=>todo!("Can't return string class yet!"),
-            Self::ANewArray { .. } => todo!("Can't return array class yet!"),
+            Self::Array { .. } => todo!("Can't return array class yet!"),
         }
     }
     pub fn set_field(&mut self, id: usize, value: Value) {
@@ -124,7 +130,7 @@ impl EnvMemory {
         unsafe { (*this).objects.len() - 1 }
     }
     fn new_array(this: *mut Self, default_value:Value,length:usize) -> ObjectRef {
-        let mut new_array = Object::ANewArray{
+        let mut new_array = Object::Array{
             //element_class_id:
             values:vec![default_value;length].into()
         };
@@ -134,6 +140,15 @@ impl EnvMemory {
     fn get_static(this: *const Self, index: StaticRef) -> Value {
         let lock = unsafe { (*this).lock.lock().expect("poisoned mutex!") };
         let val = unsafe { (*this).statics[index] };
+        drop(lock);
+        val
+    }
+    pub(crate) fn get_array_length(
+        this: *const Self,
+        obj_ref: ObjectRef,
+    ) -> usize {
+        let lock = unsafe { (*this).lock.lock().expect("poisoned mutex!") };
+        let val = unsafe { (*this).objects[obj_ref].get_array_length() };
         drop(lock);
         val
     }
@@ -680,17 +695,9 @@ fn gravity() {
         )
         .unwrap();
     for i in 0..10_000 {
-        /*
-        if i % 100 == 0{
-            let x = exec_env.call_method(getx, &[Value::ObjectRef(obj)]).unwrap().as_float().unwrap();
-            let y = exec_env.call_method(gety, &[Value::ObjectRef(obj)]).unwrap().as_float().unwrap();
-            println!("({x},{y})");
-        }*/
-        //println!("Calling Tick!");
         exec_env
             .call_method(tick, &[Value::ObjectRef(obj)])
             .unwrap();
-        //println!("Calling GetX!");
     }
     panic!();
 }
@@ -727,10 +734,10 @@ fn nbody() {
     exec_env
         .call_method(tick,&[nbody]).unwrap();
 }
-/*
+
 #[test]
 fn load_jar() {
     let mut file = std::fs::File::open("test/server.jar").unwrap();
     let classes = importer::load_jar(&mut file).unwrap();
     panic!();
-}*/
+}

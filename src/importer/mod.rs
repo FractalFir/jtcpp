@@ -418,7 +418,9 @@ pub(crate) fn load_class<R: std::io::Read>(
     let constant_pool_count = load_u16(src)?;
     let mut const_items = Vec::with_capacity(constant_pool_count as usize);
     for _ in 0..(constant_pool_count - 1) {
-        const_items.push(ConstantItem::read(src)?);
+        let ci = ConstantItem::read(src)?;
+        //println!("ci:{ci:?}");
+        const_items.push(ci);
     }
     let access_flags = AccessFlags::read(src)?;
     let this_class = load_u16(src)?;
