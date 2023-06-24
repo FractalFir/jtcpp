@@ -66,6 +66,14 @@ pub(crate) enum BaseIR {
     F2D,
     D2F,
     New(ClassRef),
+    ANewArray(ClassRef),
+    IfIGreterEqual(usize),
+    IfICmpNe(usize),
+    GoTo(usize),
+    IInc(u8,i8),
+    AAStore,
+    AALoad,
+    ArrayLength,
 }
 pub(crate) fn into_base(
     fat: &[FatOp],
@@ -75,6 +83,10 @@ pub(crate) fn into_base(
     let mut newops = Vec::with_capacity(fat.len());
     for op in fat {
         let newop = match op {
+            FatOp::IInc(local,change) => BaseIR::IInc(*local,*change),
+            FatOp::IfIGreterEqual(index)=>BaseIR::IfIGreterEqual(*index),
+            FatOp::IfICmpNe(index)=>BaseIR::IfICmpNe(*index),
+            FatOp::GoTo(index)=>BaseIR::GoTo(*index),
             FatOp::FConst(float) => BaseIR::FConst(*float),
             FatOp::IConst(int) => BaseIR::IConst(*int),
             FatOp::ISub => BaseIR::ISub,
@@ -96,6 +108,7 @@ pub(crate) fn into_base(
             FatOp::FLoad(index) => BaseIR::FLoad(*index),
             FatOp::InvokeSpecial(mangled, args) => {
                 let method_id = exec_env.code_container.lookup_or_insert_method(&mangled);
+                println!("special mangled:{mangled} id:{method_id}");
                 BaseIR::InvokeSpecial(method_id, *args)
             }
             FatOp::InvokeStatic(mangled, args) => {
@@ -193,6 +206,15 @@ pub(crate) fn into_base(
                 };
                 BaseIR::New(class_id)
             },
+            FatOp::ANewArray(class_name) =>{
+                let class_id = exec_env.code_container.lookup_class(class_name);
+                let class_id = if let Some(class_id) = class_id {
+                    class_id
+                } else {
+                    return Err(UnmetDependency::NeedsClass(class_name.clone()));
+                };
+                BaseIR::ANewArray(class_id)
+            },
             FatOp::SConst(string) => BaseIR::AConst(exec_env.const_string(string)),
             FatOp::Return => BaseIR::Return,
             FatOp::AReturn => BaseIR::AReturn,
@@ -200,6 +222,9 @@ pub(crate) fn into_base(
             FatOp::FReturn => BaseIR::FReturn,
             FatOp::Dup => BaseIR::Dup,
             FatOp::Pop => BaseIR::Pop,
+            FatOp::AAStore => BaseIR::AAStore,
+            FatOp::AALoad => BaseIR::AALoad,
+            FatOp::ArrayLength => BaseIR::ArrayLength,
             _ => todo!("Can't convert op {op:?} to base IR"),
         };
         //println!("Op:{op:?} new_op:{newop:?}");
@@ -223,6 +248,16 @@ where
         let op = &ops[op_index];
         //println!("op:{op:?} stack:{stack:?}");
         match op {
+            BaseIR::New(class_ref)=>{
+                let new_obj = ctx.new_obj(*class_ref);
+                ctx.stack_push(Value::ObjectRef(new_obj));
+            },
+            BaseIR::ANewArray(_)=>{
+                let length = ctx.stack_pop().unwrap().as_int().unwrap() as usize;
+                //let new_obj = ctx.new_obj(*class_ref);
+                let new_arr = ctx.new_array(Value::ObjectRef(0),length);
+                ctx.stack_push(Value::ObjectRef(new_arr));
+            },
             BaseIR::Dup => {
                 let a: Value = ctx.stack_pop().unwrap().clone();
                 ctx.stack_push(a);
@@ -286,6 +321,12 @@ where
                 let a = ctx.stack_pop().unwrap().as_int().unwrap();
                 ctx.stack_push(Value::Int(a % b));
             }
+            BaseIR::APutField(id) => {
+                let val = ctx.stack_pop().unwrap();
+                let obj_ref = ctx.stack_pop().unwrap();
+                let obj_ref = obj_ref.as_objref().unwrap();
+                ctx.put_field(obj_ref, *id, val);
+            }
             BaseIR::FPutField(id) => {
                 let val = ctx.stack_pop().unwrap();
                 let obj_ref = ctx.stack_pop().unwrap();
@@ -297,10 +338,15 @@ where
                 let value = ctx.get_field(obj_ref, *id).unwrap();
                 ctx.stack_push(value);
             }
+            BaseIR::AGetField(id) => {
+                let obj_ref = ctx.stack_pop().unwrap().as_objref().unwrap();
+                let value = ctx.get_field(obj_ref, *id).unwrap();
+                ctx.stack_push(value);
+            }
             BaseIR::AGetStatic(index)=>{
                  ctx.stack_push(ctx.get_static(*index));
             }
-            BaseIR::IReturn | BaseIR::FReturn => {
+            BaseIR::IReturn | BaseIR::FReturn | BaseIR::AReturn => {
                 return Ok(ctx.stack_pop().unwrap());
             }
             BaseIR::Return => {
@@ -308,7 +354,21 @@ where
             }
             BaseIR::InvokeStatic(method_id, argc) => {
                 let mut args: Box<[Value]> = (0..*argc)
-                    .map(|_| ctx.stack_pop().unwrap().clone())
+                    .map(|_| ctx.stack_pop().unwrap())
+                    .collect();
+                args.reverse();
+                // Hack
+                let args = args;
+                let res: Value = ctx.invoke_method(&args, *method_id)?;
+                if let Value::Void = res {
+                } else {
+                    ctx.stack_push(res)
+                };
+            } 
+            BaseIR::InvokeSpecial(method_id, argc) => {
+                println!("method_id:{method_id}");
+                let mut args: Box<[Value]> = (0..*argc)
+                    .map(|_| ctx.stack_pop().unwrap())
                     .collect();
                 args.reverse();
                 // Hack
@@ -321,7 +381,7 @@ where
             } 
             BaseIR::InvokeVirtual(method_id,argc) => {
                 let mut args: Box<[Value]> = (0..*argc)
-                    .map(|_| ctx.stack_pop().unwrap().clone())
+                    .map(|_| ctx.stack_pop().unwrap())
                     .collect();
                 args.reverse();
                 let obj_ref = args[0].as_objref().unwrap();
@@ -333,17 +393,14 @@ where
                     ctx.stack_push(res)
                 };
             }
-            /*
-            BaseIR::InvokeSpecial(index, argc) => {
-                let method = code_container.methods[*index as usize].as_ref().unwrap();
-                let mut args: Box<[_]> = (0..*argc).map(|_| ctx.stack_pop().unwrap()).collect();
-                args.reverse();
-                let res = method.call(&args, memory, code_container)?;
-                if let Value::Void = res {
-                } else {
-                    ctx.stack_push(res)
-                };
-            }*/
+            BaseIR::IfIGreterEqual(jump_index)=>{
+                let a = ctx.stack_pop().unwrap().as_int().unwrap();
+                let b = ctx.stack_pop().unwrap().as_int().unwrap();
+                if a >= b{
+                    op_index = *jump_index;
+                    continue;
+                }
+            }
             _ => todo!("Can't execute {op:?} yet!"),
         }
         op_index += 1;

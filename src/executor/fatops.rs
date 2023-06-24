@@ -95,6 +95,21 @@ pub(crate) enum FatOp {
     D2F,
     New(IString),
     ANewArray(IString),
+    AAStore,
+    AALoad,
+    ArrayLength,
+    IfIGreterEqual(usize),
+    IfICmpNe(usize),
+    GoTo(usize),
+    IInc(u8,i8),
+}
+pub(crate) fn find_op_with_offset(ops: &[(OpCode, u16)],idx:u16)->Option<usize>{
+    for (current,op) in ops.iter().enumerate(){
+        if op.1 == idx{
+            return Some(current);
+        }
+    }
+    None
 }
 pub(crate) fn expand_ops(ops: &[(OpCode, u16)], class: &ImportedJavaClass) -> Box<[FatOp]> {
     let mut fatops = Vec::with_capacity(ops.len());
@@ -157,6 +172,24 @@ pub(crate) fn expand_ops(ops: &[(OpCode, u16)], class: &ImportedJavaClass) -> Bo
                     FieldType::ObjectRef => FatOp::AGetField(class, name),
                 }
             }
+            OpCode::IfICmpNe(op_offset)=>{
+                let curr_offset = op.1;
+                let op_offset:u16 = (curr_offset as i32 + op_offset as i32) as u16;
+                let op_index = find_op_with_offset(ops,op_offset).unwrap();
+                FatOp::IfICmpNe(op_index)
+            },
+            OpCode::IfIGreterEqual(op_offset)=>{
+                let curr_offset = op.1;
+                let op_offset:u16 = (curr_offset as i32 + op_offset as i32) as u16;
+                let op_index = find_op_with_offset(ops,op_offset).unwrap();
+                FatOp::IfIGreterEqual(op_index)
+            },
+            OpCode::GoTo(op_offset)=>{
+                let curr_offset = op.1;
+                let op_offset:u16 = (curr_offset as i32 + op_offset as i32) as u16;
+                let op_index = find_op_with_offset(ops,op_offset).unwrap();
+                FatOp::GoTo(op_index)
+            },
             OpCode::PutField(index) => {
                 let (ftype, class, name) = fieldref_to_info(index, class);
                 match ftype {
@@ -183,7 +216,11 @@ pub(crate) fn expand_ops(ops: &[(OpCode, u16)], class: &ImportedJavaClass) -> Bo
             OpCode::Pop => FatOp::Pop,
             ///TODO: handle non-static methods(change argc by 1)
             OpCode::InvokeSpecial(index) => {
-                let (name, argc) = methodref_to_mangled_and_argc(index, class);
+                let (name, mut argc) = methodref_to_mangled_and_argc(index, class);
+                // Either <init> or <cinit>
+                if name.contains('<'){
+                    argc += 1;
+                }
                 FatOp::InvokeSpecial(name, argc)
             }
             OpCode::InvokeStatic(index) => {
@@ -198,6 +235,10 @@ pub(crate) fn expand_ops(ops: &[(OpCode, u16)], class: &ImportedJavaClass) -> Bo
             OpCode::AReturn => FatOp::AReturn,
             OpCode::FReturn => FatOp::FReturn,
             OpCode::IReturn => FatOp::IReturn,
+            OpCode::AAStore => FatOp::AAStore,
+            OpCode::AALoad => FatOp::AALoad,
+            OpCode::ArrayLength => FatOp::ArrayLength,
+            OpCode::IInc(local,offset)=>FatOp::IInc(local,offset),
             _ => todo!("can't expand op {op:?}"),
         };
         fatops.push(cop);

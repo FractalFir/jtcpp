@@ -79,10 +79,35 @@ class Planet{
   public void Tick(){
       position.Add(velocity);
   }
+  public void Display(){
+      //TODO:Display data!
+  }
 }
 class NBody{
   Planet[] planets;
   public NBody(int planetCount){
-      this.planets = new Planet[planetCount];
+      planets = new Planet[planetCount];
+      for(int i = 0; i < planetCount; i++){
+        planets[i] = new Planet();
+      } 
+  }
+  public void Tick(){
+     for(int i = 0; i < planets.length; i++){
+        for(int j = 0; j < planets.length; j++){
+            if(i == j) continue;
+            planets[i].SimulateInteraction(planets[j]);
+        }
+     }
+     for(int i = 0; i < planets.length; i++){
+        planets[i].Tick();
+     }
+  }
+  public void Display(){
+     for(int i = 0; i < planets.length; i++){
+        planets[i].Display();
+     }
+  }
+  public static NBody NewNBody(int pc){
+    return new NBody(pc);
   }
 }

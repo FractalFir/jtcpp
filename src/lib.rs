@@ -59,6 +59,11 @@ enum Object {
         class_id: ClassRef,
         values: Box<[Value]>,
     },
+    ANewArray{
+        //array_class_id:ClassRef,
+        //element_class_id:ClassRef,
+        values:Box<[Value]>,
+    },
     String(IString),
 }
 impl Object {
@@ -66,12 +71,14 @@ impl Object {
         match self{
             Self::Object{..}=>todo!("Can convert only strings to strings"),
             Self::String(string)=>Some(string.to_owned()),
+            Self::ANewArray { .. } => todo!("Can't convert arrays to string!"),
         }
     }
     pub fn get_class(&self)->ClassRef{
         match self{
             Self::Object{class_id,..}=>*class_id,
             Self::String(_)=>todo!("Can't return string class yet!"),
+            Self::ANewArray { .. } => todo!("Can't return array class yet!"),
         }
     }
     pub fn set_field(&mut self, id: usize, value: Value) {
@@ -114,6 +121,14 @@ impl EnvMemory {
     }
     fn new_obj(this: *mut Self, new_obj: Object) -> ObjectRef {
         unsafe { (*this).objects.push(new_obj) };
+        unsafe { (*this).objects.len() - 1 }
+    }
+    fn new_array(this: *mut Self, default_value:Value,length:usize) -> ObjectRef {
+        let mut new_array = Object::ANewArray{
+            //element_class_id:
+            values:vec![default_value;length].into()
+        };
+        unsafe { (*this).objects.push(new_array) };
         unsafe { (*this).objects.len() - 1 }
     }
     fn get_static(this: *const Self, index: StaticRef) -> Value {
@@ -289,6 +304,8 @@ impl ExecEnv {
         let obj_class = res.lookup_class("java/lang/Object").unwrap();
         let null_obj = res.new_obj(obj_class);
         res.env_mem.insert_static(Value::ObjectRef(null_obj));
+        let obj_init = res.code_container.lookup_or_insert_method("java/lang/Object::<init>()V");
+        res.replace_method_with_extern(obj_init,||{});
         res
     }
     pub(crate) fn load_method(
@@ -367,6 +384,12 @@ impl ExecEnv {
     }
     fn insert_stdlib(&mut self) {
         stdlib::insert_all(self);
+    }
+}
+//trait SimpleARG{};
+impl <T: Fn()>Invokable for T{
+    fn call(&self, _: ExecCtx) -> Result<Value, ExecException>{
+        Ok(Value::Void)
     }
 }
 #[derive(Debug)]
@@ -693,6 +716,16 @@ fn nbody() {
     exec_env.load_class(vec3_class);
     exec_env.load_class(planet_class);
     exec_env.load_class(nbody_class);
+    let new_nbody = exec_env
+        .lookup_method(&mangle_method_name("NBody", "NewNBody", "(I)LNBody;"))
+        .unwrap();
+    let tick =  exec_env
+        .lookup_method(&mangle_method_name("NBody", "Tick", "()V"))
+        .unwrap();
+    let nbody = exec_env
+        .call_method(new_nbody,&[Value::Int(10)]).unwrap();
+    exec_env
+        .call_method(tick,&[nbody]).unwrap();
 }
 /*
 #[test]

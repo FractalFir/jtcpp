@@ -39,6 +39,7 @@ pub(crate) enum OpCode {
     PutField(u16),
     LoadConst(u16),
     IfICmpEq(i16),
+    IfICmpNe(i16),
     IfZero(i16),    //aka IfEq on wikipedia
     IfNotZero(i16), //aka IfEq on wikipedia
     IfNull(i16),
@@ -167,6 +168,11 @@ pub(crate) fn load_ops<R: std::io::Read>(
                 curr_offset += 2;
                 OpCode::IfICmpEq(offset)
             }
+            0xa0=>{
+                let offset = load_i16(src)?;
+                curr_offset += 2;
+                OpCode::IfICmpNe(offset)
+            },
             0xa2 => {
                 let offset = load_i16(src)?;
                 curr_offset += 2;

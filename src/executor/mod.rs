@@ -144,6 +144,14 @@ impl<'env> ExecCtx<'env> {
         };
         callable(call_arg)
     }
+    fn new_obj(&mut self,class:ClassRef)->ObjectRef{
+        let new_obj = self.code_container.classes[class].new();
+        unsafe { EnvMemory::new_obj(self.memory.get(), new_obj) }
+    }
+    fn new_array(&mut self,default_value:Value,length:usize)->ObjectRef{
+        //let new_obj = self.code_container.classes[class].new();
+        unsafe { EnvMemory::new_array(self.memory.get(), default_value,length) }
+    }
     fn invoke_method<'caller>(
         &mut self,
         args: &'caller [Value],
