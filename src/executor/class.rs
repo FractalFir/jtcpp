@@ -5,6 +5,7 @@ use std::collections::HashMap;
 use crate::ClassRef;
 pub(crate) struct Class {
     class_id: ClassRef,
+    class_name:IString,
     virtual_methods: Box<[usize]>,
     virtual_map:HashMap<IString,usize>,
     //statics: Box<[usize]>,
@@ -13,6 +14,9 @@ pub(crate) struct Class {
     field_types: Box<[FieldType]>,
 }
 impl Class {
+    pub(crate) fn class_name(&self)->&str{
+        &self.class_name
+    }
     //Call *ONLY* once per class, when after adding it to CodeContainer!
     pub(crate) fn set_id(&mut self,id:ClassRef){
         assert_eq!(self.class_id,0,"Tried to set class id after linknig!");
@@ -24,7 +28,7 @@ impl Class {
     pub(crate) fn lookup_virtual(&self, method_name:&str)->Option<usize>{
         if let Some(idx) = self.virtual_map.get(method_name.into()){Some(*idx)}
         else{
-            panic!("Could not find method:{method_name} in class that has methods:{:?}",self.virtual_map);
+            panic!("Could not find method:{method_name} in class {} that has methods:{:?}",self.class_name,self.virtual_map);
         }
     }
     pub(crate) fn get_field(&self, name: &str) -> Option<(usize, &FieldType)> {
@@ -40,6 +44,7 @@ impl Class {
     }
     pub(crate) fn empty() -> Self {
         Self {
+            class_name: "".into(),
             class_id: 0,
             virtual_methods: Box::new([]),
             virtual_map: HashMap::new(),
@@ -95,6 +100,7 @@ pub(crate) fn finalize(class: &FatClass, env: &mut ExecEnv) -> Result<Class, Unm
     }
     let class_id = 0;
     Ok(Class {
+        class_name:class.class_name().into(),
         class_id,
         virtual_methods:virtual_methods.into(),
         virtual_map,

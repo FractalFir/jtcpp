@@ -33,6 +33,8 @@ pub(crate) enum OpCode {
     FDiv,
     IDiv,
     LDiv,
+    FRem,
+    DRem,
     IRem,
     LRem,
     IShr,
@@ -294,6 +296,8 @@ pub(crate) fn load_ops<R: std::io::Read>(
             0x6f => OpCode::DDiv,
             0x70 => OpCode::IRem,
             0x71 => OpCode::LRem,
+            0x72 => OpCode::FRem,
+            0x73 => OpCode::DRem,
             0x74 => OpCode::INeg,
             0x75 => OpCode::LNeg,
             0x76 => OpCode::FNeg,
@@ -457,12 +461,17 @@ pub(crate) fn load_ops<R: std::io::Read>(
             }
             0xb9 => {
                 let constant_pool_index = load_u16(src)?;
-                curr_offset += 2;
+                let _count = load_u8(src)?;
+                let zero = load_u8(src)?;
+                assert_eq!(zero,0);
+                curr_offset += 4;
                 OpCode::InvokeInterface(constant_pool_index)
             }
             0xba => {
                 let constant_pool_index = load_u16(src)?;
-                curr_offset += 2;
+                let zeroes = load_u16(src)?;
+                assert_eq!(zeroes,0);
+                curr_offset += 4;
                 OpCode::InvokeDynamic(constant_pool_index)
             }
             0xbb => {

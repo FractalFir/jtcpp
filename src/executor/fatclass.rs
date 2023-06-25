@@ -9,8 +9,7 @@ pub(crate) struct FatClass {
     fields: Vec<(IString, FieldType)>,
     static_fields: Vec<(IString, FieldType)>,
 }
-impl FatClass {
-    
+impl FatClass {   
     pub(crate) fn add_virtual(&mut self, virtual_partialy_mangled:&str,method_mangled:&str){
         self.virtuals.push((virtual_partialy_mangled.into(),method_mangled.into()));
     }

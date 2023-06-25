@@ -3,6 +3,7 @@ pub mod opcodes;
 use crate::IString;
 use attribute::Attribute;
 use opcodes::OpCode;
+use crate::importer::attribute::BootstrapMethod;
 macro_rules! load_fn_impl {
     ($name:ident,$tpe:ty) => {
         pub(crate) fn $name<R: std::io::Read>(src: &mut R) -> std::io::Result<$tpe> {
@@ -146,6 +147,35 @@ pub(crate) struct ImportedJavaClass {
     attributes: Box<[Attribute]>, //field_names: Box<[IString]>,
 }
 impl ImportedJavaClass {
+    pub(crate) fn lookup_invoke_dynamic(&self,dynamic:u16)->Option<(u16,u16)>{
+        let dynamic = &self.const_items[dynamic as usize - 1];
+        if let ConstantItem::InvokeDynamic {bootstrap_method_attr_index,name_and_type_index} = dynamic {
+            Some((*bootstrap_method_attr_index,*name_and_type_index))
+        } else {
+            None
+        }
+        
+    }
+    pub(crate) fn lookup_method_handle(&self,method_handle:u16)->Option<(u8,u16)>{
+        let method_handle = &self.const_items[method_handle as usize - 1];
+        if let ConstantItem::MethodHandle {reference_kind,reference_index} = method_handle {
+            Some((*reference_kind,*reference_index))
+        } else {
+            None
+        }
+        
+    }
+    pub(crate) fn lookup_bootstrap_method(&self,index:u16)->Option<&BootstrapMethod>{
+        for attribute in self.attributes.iter(){
+            if let Attribute::BootstrapMethods {bootstrap_methods} = attribute{
+                return bootstrap_methods.get(index as usize);
+            }
+        }
+        None
+    }
+    pub(crate) fn name(&self) -> &str{
+        self.lookup_class(self.this_class).unwrap()
+    }
     pub(crate) fn this_class(&self) -> u16 {
         self.this_class
     }
@@ -208,7 +238,14 @@ impl ImportedJavaClass {
         } = method_ref
         {
             Some((*class_index, *name_and_type_index))
-        } else {
+        } else if let ConstantItem::InterfaceMethodRef {
+            class_index,
+            name_and_type_index,
+        } = method_ref
+        {
+            Some((*class_index, *name_and_type_index))
+        }
+        else {
             None
         }
     }
@@ -534,7 +571,7 @@ pub(crate) fn load_jar(
         let ext = file.name().split('.').last();
         let ext = if let Some(ext) = ext { ext } else { continue }.to_owned();
         if ext == "class" {
-            println!("Filename: {}", file.name());
+            //println!("Filename: {}", file.name());
             let loaded = load_class(&mut file);
             match loaded{
                 Ok(class)=>classes.push(class),
@@ -545,7 +582,7 @@ pub(crate) fn load_jar(
             }    
         }
         if ext == "jar" {
-            println!("Filename: {}", file.name());
+            //println!("Filename: {}", file.name());
             use std::io::Read;
             // TODO fix this stupidness, may need to write an issue to request ZipFile to implement Seek.
             let mut tmp = Vec::new();

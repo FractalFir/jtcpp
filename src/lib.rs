@@ -11,6 +11,7 @@ pub type MethodRef = usize;
 use crate::executor::baseir::BaseIR;
 use executor::class::Class;
 use executor::ExecCtx;
+use crate::executor::fatclass::FatClass;
 enum Method {
     BaseIR { ops: Box<[BaseIR]> },
     Invokable(Box<dyn Invokable>),
@@ -83,7 +84,7 @@ impl Object {
     pub fn get_class(&self)->ClassRef{
         match self{
             Self::Object{class_id,..}=>*class_id,
-            Self::String(_)=>todo!("Can't return string class yet!"),
+            Self::String(_)=>1,
             Self::Array { .. } => todo!("Can't return array class yet!"),
         }
     }
@@ -187,12 +188,19 @@ impl EnvMemory {
         }
     }
 }
+struct UnfinalizedMethod{
+    ops:Box<[crate::executor::fatops::FatOp]>,
+    method_id:MethodRef,
+}
 struct CodeContainer {
     classes: Vec<Class>,
     class_names: HashMap<IString, usize>,
     methods: Vec<Option<Method>>,
     method_names: HashMap<IString, usize>,
     static_strings:HashMap<IString,usize>,
+    // have some unresolved dependencies.
+    unfinalized_classes:HashMap<IString,Vec<FatClass>>,
+    unfinalized_methods:HashMap<IString,Vec<UnfinalizedMethod>>
 }
 impl CodeContainer {
     fn get_virtual(&self,class:ClassRef,id:usize)->Option<usize>{
@@ -235,6 +243,8 @@ impl CodeContainer {
             classes,
             class_names,
             method_names,
+            unfinalized_classes:HashMap::new(),
+            unfinalized_methods:HashMap::new(),
             static_strings:HashMap::new(),
         };
         res.set_or_replace_class("java/lang/Object", object_class);
@@ -299,6 +309,9 @@ fn mangle_method_name_partial(method: &str, desc: &str) -> IString {
     format!("{method}{desc}").into_boxed_str()
 }
 impl ExecEnv {
+    fn dep_status(&self){
+        println!("unfinalized classes:{}, unfinalized methods{}",self.code_container.unfinalized_classes.len(),self.code_container.unfinalized_methods.len());
+    }
     fn const_string(&mut self,string:&str)->ObjectRef{
         *self.code_container.static_strings.entry(string.into()).or_insert_with(||{
              let new_obj = Object::String(string.into());
@@ -316,11 +329,24 @@ impl ExecEnv {
             code_container,
             env_mem,
         };
-        let obj_class = res.lookup_class("java/lang/Object").unwrap();
+        //let obj_class = res.lookup_class("java/lang/Object").unwrap();
+        let mut class_class = FatClass::new("java/lang/Class","java/lang/Object");
+        class_class.add_virtual("getClassLoader()Ljava/lang/ClassLoader;","java/lang/Class::getClassLoader()Ljava/lang/ClassLoader;");
+        
+        res.insert_class(class_class);
+        let mut object_class = FatClass::new("java/lang/Object","java/lang/Object");
+        object_class.add_virtual("getClass()Ljava/lang/Class;","java/lang/Object::getClass()Ljava/lang/Class;");
+        let final_object_class = crate::executor::class::finalize(&object_class,&mut res).unwrap();
+        let obj_class = res.code_container.set_or_replace_class("java/lang/Object",final_object_class);
         let null_obj = res.new_obj(obj_class);
         res.env_mem.insert_static(Value::ObjectRef(null_obj));
         let obj_init = res.code_container.lookup_or_insert_method("java/lang/Object::<init>()V");
         res.replace_method_with_extern(obj_init,||{});
+        let mut string = FatClass::new("java/lang/String","java/lang/Object");
+        string.add_virtual("split(Ljava/lang/String;)[Ljava/lang/String;","java/lang/String::split(Ljava/lang/String;)[Ljava/lang/String;");
+        string.add_virtual("isEmpty()Z","java/lang/String::isEmpty()Z");
+        //
+        res.insert_class(string);
         res
     }
     pub(crate) fn load_method(
@@ -335,7 +361,6 @@ impl ExecEnv {
             return;
         };
         let fat = crate::executor::fatops::expand_ops(bytecode, &class);
-        let baseir = crate::executor::baseir::into_base(&fat, self).unwrap();
         let max_locals = method.max_locals().unwrap();
         let (name, descriptor) = (method.name_index(), method.descriptor_index());
         let method_class = class.lookup_class(class.this_class()).unwrap();
@@ -343,17 +368,27 @@ impl ExecEnv {
         let descriptor = class.lookup_utf8(descriptor).unwrap();
         let mangled = mangle_method_name(method_class, name, descriptor);
         let method_id = self.code_container.lookup_or_insert_method(&mangled);
-        let argc = method_desc_to_argc(&descriptor);
+        //let argc = method_desc_to_argc(&descriptor);
         let af = method.access_flags();
         let is_static = af.is_static();
         //println!("mangled:{mangled}");
-
-        self.code_container.methods[method_id] = Some(Method::BaseIR { ops: baseir });
+        self.insert_method(&fat,&mangled);
     }
-    pub(crate) fn insert_class(&mut self, base_class: crate::executor::fatclass::FatClass)->ClassRef {
-        let final_class = crate::executor::class::finalize(&base_class, self).unwrap();
-        self.code_container
-            .set_or_replace_class(base_class.class_name(), final_class)
+    fn insert_method(&mut self,ops:&[crate::executor::fatops::FatOp],mangled:&str){
+        let method_id = self.code_container.lookup_or_insert_method(&mangled);
+        match crate::executor::baseir::into_base(&ops, self){
+            Ok(baseir) =>self.code_container.methods[method_id] = Some(Method::BaseIR { ops: baseir }),
+            Err(err) => self.code_container.unfinalized_methods.entry(err.dependency().into()).or_insert(Vec::new()).push(UnfinalizedMethod{ops:ops.into(),method_id}),
+        }
+    }
+    pub(crate) fn insert_class(&mut self, base_class: crate::executor::fatclass::FatClass)->Option<ClassRef> {
+        match crate::executor::class::finalize(&base_class, self){
+            Ok(final_class) =>Some(self.code_container.set_or_replace_class(base_class.class_name(), final_class)),
+            Err(err) => {
+                self.code_container.unfinalized_classes.entry(err.dependency().into()).or_insert(Vec::new()).push(base_class);
+                None
+            }
+        }
     }
     pub(crate) fn load_class(&mut self, class: crate::importer::ImportedJavaClass) {
         let base_class = crate::executor::fatclass::expand_class(&class);
@@ -739,5 +774,12 @@ fn nbody() {
 fn load_jar() {
     let mut file = std::fs::File::open("test/server.jar").unwrap();
     let classes = importer::load_jar(&mut file).unwrap();
+    let mut exec_env = ExecEnv::new();
+    stdlib::insert_all(&mut exec_env);
+    for class in classes{
+        println!("class:{}",class.name());
+        exec_env.load_class(class);
+    }
+    exec_env.dep_status();
     panic!();
 }

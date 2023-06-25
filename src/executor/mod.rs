@@ -10,6 +10,13 @@ use core::ptr::NonNull;
 pub(crate) enum UnmetDependency {
     NeedsClass(IString),
 }
+impl UnmetDependency{
+    pub(crate) fn dependency(&self)->&str{
+        match self{
+            Self::NeedsClass(class)=>class,
+        }
+    }
+}
 #[derive(Debug, Clone)]
 pub(crate) enum FieldType {
     Byte,

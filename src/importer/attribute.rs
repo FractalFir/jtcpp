@@ -22,8 +22,8 @@ pub(crate) struct MethodParameter {
 }
 #[derive(Debug)]
 pub(crate) struct BootstrapMethod {
-    bootstrap_method_ref: u16,
-    bootstrap_args: Box<[u16]>,
+   pub(crate) bootstrap_method_ref: u16,
+   pub(crate) bootstrap_args: Box<[u16]>,
 }
 #[derive(Debug)]
 pub(crate) enum Attribute {
@@ -234,9 +234,14 @@ impl Attribute {
             "RuntimeInvisibleTypeAnnotations"=>Ok(Self::Unknown), //TODO: Not needed, but might be needed in the future.
             "RuntimeInvisibleParameterAnnotations"=>Ok(Self::Unknown), //TODO: Not needed, but might be needed in the future.
             "RuntimeInvisibleAnnotations"=>Ok(Self::Unknown), //TODO: Not needed, but might be needed in the future.
-            "ST_TERMINATED" | "()Lio/netty/buffer/ByteBuf;" | "I" | "Index" | "Lcom/google/common/cache/ReferenceEntry<TK;TV;>;" | "Ljava/util/Comparator;" => 
+            "ST_TERMINATED" | "()Lio/netty/buffer/ByteBuf;" | "Index" | "Lcom/google/common/cache/ReferenceEntry<TK;TV;>;" | "Ljava/util/Comparator;" | "Ljavax/annotation/Nullable;" | "<init>" | "Lcom/mojang/brigadier/context/CommandContext;" => 
             return Err(std::io::Error::new(std::io::ErrorKind::Other,format!("Nonsense attribute \"{attribute_name}\""))),//TODO: 100% result of an error parsing a class.
-            _ => todo!("Can't read attributes of type {attribute_name}!"),
+            _ => {
+                if attribute_name.len() < 5{
+                    return Err(std::io::Error::new(std::io::ErrorKind::Other,format!("Nonsense attribute \"{attribute_name}\"")));
+                }
+                todo!("Can't read attributes of type {attribute_name}!")
+            },
         }
     }
     pub(crate) fn read<R: std::io::Read>(
