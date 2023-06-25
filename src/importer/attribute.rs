@@ -230,6 +230,7 @@ impl Attribute {
             "RuntimeVisibleParameterAnnotations"=>Ok(Self::Unknown), //TODO: Needed in the future.
             "RuntimeVisibleTypeAnnotations"=>Ok(Self::Unknown), //TODO: Needed in the future.
             "AnnotationDefault"=>Ok(Self::Unknown), //TODO: Needed in the future.
+            "PermittedSubclasses"=>Ok(Self::Unknown), //TODO: Needed in the future.
             "RuntimeInvisibleTypeAnnotations"=>Ok(Self::Unknown), //TODO: Not needed, but might be needed in the future.
             "RuntimeInvisibleParameterAnnotations"=>Ok(Self::Unknown), //TODO: Not needed, but might be needed in the future.
             "RuntimeInvisibleAnnotations"=>Ok(Self::Unknown), //TODO: Not needed, but might be needed in the future.
