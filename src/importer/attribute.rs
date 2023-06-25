@@ -62,6 +62,13 @@ pub(crate) enum Attribute {
     Signature {
         signature: u16,
     },
+    ConstantValue{
+        value_index:u16
+    },
+    EnclosingMethod{
+        class_index:u16,
+        method_index:u16,
+    },
     Deprecated,
 }
 impl Attribute {
@@ -211,6 +218,23 @@ impl Attribute {
                     exceptions: exceptions.into(),
                 })
             }
+            "ConstantValue"=>{
+                let value_index = load_u16(src)?;
+                 Ok(Self::ConstantValue{value_index})
+            },
+            "EnclosingMethod"=>{
+                let class_index = load_u16(src)?;
+                let method_index = load_u16(src)?;
+                Ok(Self::EnclosingMethod{class_index,method_index})
+            },
+            "RuntimeVisibleParameterAnnotations"=>Ok(Self::Unknown), //TODO: Needed in the future.
+            "RuntimeVisibleTypeAnnotations"=>Ok(Self::Unknown), //TODO: Needed in the future.
+            "AnnotationDefault"=>Ok(Self::Unknown), //TODO: Needed in the future.
+            "RuntimeInvisibleTypeAnnotations"=>Ok(Self::Unknown), //TODO: Not needed, but might be needed in the future.
+            "RuntimeInvisibleParameterAnnotations"=>Ok(Self::Unknown), //TODO: Not needed, but might be needed in the future.
+            "RuntimeInvisibleAnnotations"=>Ok(Self::Unknown), //TODO: Not needed, but might be needed in the future.
+            "ST_TERMINATED" | "()Lio/netty/buffer/ByteBuf;" | "I" | "Index" | "Lcom/google/common/cache/ReferenceEntry<TK;TV;>;" | "Ljava/util/Comparator;" => 
+            return Err(std::io::Error::new(std::io::ErrorKind::Other,format!("Nonsense attribute \"{attribute_name}\""))),//TODO: 100% result of an error parsing a class.
             _ => todo!("Can't read attributes of type {attribute_name}!"),
         }
     }
@@ -219,12 +243,15 @@ impl Attribute {
         const_items: &[ConstantItem],
     ) -> Result<Self, std::io::Error> {
         let attribute_name_index = load_u16(src)?;
-        assert!(attribute_name_index > 0);
-        let attribute_name = &const_items[(attribute_name_index - 1) as usize];
+        //assert!(attribute_name_index > 0);
+        if attribute_name_index == 0{
+            return Err(std::io::Error::new(std::io::ErrorKind::Other,"AttributeNameIndex is 0!"));
+        }
+        let attribute_name = &const_items.get((attribute_name_index - 1) as usize).ok_or_else(||{std::io::Error::new(std::io::ErrorKind::Other,"AttributeNameIndex is outside ConstItem.")})?;
         let attribute_name = if let ConstantItem::Utf8(attribute_name) = attribute_name {
             attribute_name
         } else {
-            panic!("Atribute name must be a UTF8 string!");
+            return Err(std::io::Error::new(std::io::ErrorKind::Other,"Atribute name must be a UTF8 string!"));
         };
         let attribute_length = load_u32(src)? as usize;
         let mut attibute_data = vec![0; attribute_length];

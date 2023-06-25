@@ -13,7 +13,11 @@ macro_rules! load_fn_impl {
     };
 }
 load_fn_impl!(load_u64, u64);
+load_fn_impl!(load_i64, i64);
+load_fn_impl!(load_f64, f64);
+load_fn_impl!(load_i32, i32);
 load_fn_impl!(load_u32, u32);
+load_fn_impl!(load_f32, f32);
 load_fn_impl!(load_u16, u16);
 load_fn_impl!(load_i16, i16);
 load_fn_impl!(load_u8, u8);
@@ -235,6 +239,9 @@ impl ImportedJavaClass {
 #[derive(Debug)]
 pub(crate) enum ConstantItem {
     Unknown,
+    Intiger(i32),
+    Float(f32),
+    Double(f64),
     MethodRef {
         class_index: u16,
         name_and_type_index: u16,
@@ -273,6 +280,7 @@ pub(crate) enum ConstantItem {
 }
 #[derive(Debug)]
 pub enum ConstantImportError {
+    ZeroTypeConstError,
     IoError(std::io::Error),
     Utf8Error(std::str::Utf8Error),
 }
@@ -324,6 +332,7 @@ impl ConstantItem {
         let tag = load_u8(src)?;
         //println!("tag:{tag}");
         match tag {
+            0 => return Err(ConstantImportError::ZeroTypeConstError),
             1 => {
                 let length = load_u16(src)?;
                 let mut bytes = vec![0; length as usize];
@@ -332,10 +341,22 @@ impl ConstantItem {
                 //println!("bytes:{bytes:?} string:{istring}");
                 Ok(Self::Utf8(istring))
             }
+            3 => {
+                let int = load_i32(src)?;
+                Ok(Self::Intiger(int))
+            }
+            4 => {
+                let float = load_f32(src)?;
+                Ok(Self::Float(float))
+            }
             5 => {
                 let long = load_u64(src)?;
                 //println!("long:{long:x}");
                 Ok(Self::Long(long))
+            }
+            6 => {
+                let double = load_f64(src)?;
+                Ok(Self::Double(double))
             }
             7 => {
                 let name_index = load_u16(src)?;
@@ -396,6 +417,9 @@ impl ConstantItem {
                     bootstrap_method_attr_index,
                     name_and_type_index,
                 })
+            }
+            2 | 19.. => {
+                Err(std::io::Error::new(std::io::ErrorKind::Other,"Invalid ConstItem type!").into())
             }
             _ => todo!("Unhandled const info kind: {tag}"),
         }
@@ -506,13 +530,22 @@ pub(crate) fn load_jar(
     let mut classes = Vec::new();
     for i in 0..zip.len() {
         let mut file = zip.by_index(i)?;
+        
         let ext = file.name().split('.').last();
         let ext = if let Some(ext) = ext { ext } else { continue }.to_owned();
-        println!("Filename: {} ext:{ext:?}", file.name());
         if ext == "class" {
-            classes.push(load_class(&mut file)?);
+            println!("Filename: {}", file.name());
+            let loaded = load_class(&mut file);
+            match loaded{
+                Ok(class)=>classes.push(class),
+                Err(err)=>{
+                    //let dump_path = 
+                    println!("Error:\"{err:?}\" while loading {}.",file.name())
+                },
+            }    
         }
         if ext == "jar" {
+            println!("Filename: {}", file.name());
             use std::io::Read;
             // TODO fix this stupidness, may need to write an issue to request ZipFile to implement Seek.
             let mut tmp = Vec::new();
