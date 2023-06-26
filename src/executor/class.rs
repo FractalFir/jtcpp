@@ -14,6 +14,12 @@ pub(crate) struct Class {
     field_types: Box<[FieldType]>,
 }
 impl Class {
+    pub(crate) fn virtual_methods(&self) -> &[usize]{
+        &self.virtual_methods
+    }
+    pub(crate) fn virtual_map(&self) -> &HashMap<IString, usize>{
+        &self.virtual_map
+    }
     pub(crate) fn field_types(&self) -> &[FieldType]{
         &self.field_types
     }
@@ -102,11 +108,18 @@ pub(crate) fn finalize(class: &FatClass, env: &mut ExecEnv) -> Result<Class, Unm
         field_types.push((*ftype).clone());
     }
     //This is naive and *DOES NOT* respect inheretnce!
-    let mut virtual_methods = Vec::new();
-    let mut virtual_map = HashMap::new();
+    let mut virtual_methods:Vec<usize> = env.get_class_virtual_methods(super_class).unwrap().into();
+    let mut virtual_map:HashMap<IString, usize> = env.get_class_virtual_map(super_class).unwrap().into();//HashMap::new();
     for (virtual_method, real_method) in class.virtuals() {
-        virtual_methods.push(env.code_container.lookup_or_insert_method(real_method));
-        virtual_map.insert(virtual_method.to_owned(), virtual_methods.len() - 1);
+        //println!("virtual_method:{virtual_method},real_method:{real_method}");
+        if let Some(id) = virtual_map.get(virtual_method){
+            virtual_methods[*id] = env.code_container.lookup_or_insert_method(real_method);
+        }
+        else{
+            virtual_methods.push(env.code_container.lookup_or_insert_method(real_method));
+            virtual_map.insert(virtual_method.to_owned(), virtual_methods.len() - 1);
+            
+        }    
     }
     let class_id = 0;
     Ok(Class {

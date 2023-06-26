@@ -61,6 +61,7 @@ pub(crate) enum FatOp {
     IAdd,
     LAdd,
     IMul,
+    LMul,
     FMul,
     ISub,
     DSub,
@@ -80,8 +81,9 @@ pub(crate) enum FatOp {
     IXOr,
     LXOr,
     INeg,
+    LNeg,
     LUShr,
-    LUShl,
+    IUShr,
     InvokeSpecial(IString, u8),
     InvokeStatic(IString, u8),
     InvokeInterface(IString, u8),
@@ -125,6 +127,7 @@ pub(crate) enum FatOp {
     CPutField(IString, IString),
     Dup,
     Dup2,
+    DupX1,
     Pop,
     Pop2,
     Return,
@@ -137,11 +140,29 @@ pub(crate) enum FatOp {
     D2F,
     I2L,
     L2I,
+    I2F,
+    F2I,
     New(IString),
     ANewArray(IString),
+    BNewArray,
+    CNewArray,
+    DNewArray,
+    FNewArray,
+    INewArray,
+    LNewArray,
+    SNewArray,
+    ZNewArray,
     CheckedCast(IString),
     InstanceOf(IString),
     AAStore,
+    BAStore,
+    CAStore,
+    DAStore,
+    FAStore,
+    IAStore,
+    LAStore,
+    SAStore,
+    ZAStore,
     AALoad,
     BALoad,
     CALoad,
@@ -149,8 +170,14 @@ pub(crate) enum FatOp {
     FALoad,
     IALoad,
     LALoad,
+    SALoad,
+    ZALoad,
     LCmp,
+    FCmpL,
+    FCmpG,
     ArrayLength,
+    IfACmpEq(usize),
+    IfICmpGreater(usize),
     IfIGreterEqual(usize),
     IfGreterEqualZero(usize),
     IfGreterZero(usize),
@@ -168,6 +195,8 @@ pub(crate) enum FatOp {
     GoTo(usize),
     IInc(u8, i8),
     Throw,
+    MonitorEnter,
+    MonitorExit,
 }
 pub(crate) fn find_op_with_offset(ops: &[(OpCode, u16)], idx: u16) -> Option<usize> {
     for (current, op) in ops.iter().enumerate() {
@@ -192,6 +221,9 @@ pub(crate) fn expand_ops(ops: &[(OpCode, u16)], class: &ImportedJavaClass) -> Bo
                         let class_name = class.lookup_utf8(*name_index).unwrap();
                         FatOp::ClassConst(class_name.into())
                     }
+                    crate::importer::ConstantItem::Float(float) => FatOp::FConst(*float),
+                    crate::importer::ConstantItem::Intiger(int) => FatOp::IConst(*int),
+                    crate::importer::ConstantItem::Long(long) => FatOp::LConst(*long),
                     _ => todo!("can't handle const!{const_item:?}"),
                 }
             }
@@ -202,6 +234,8 @@ pub(crate) fn expand_ops(ops: &[(OpCode, u16)], class: &ImportedJavaClass) -> Bo
             OpCode::FConst(float) => FatOp::FConst(float),
             OpCode::LConst(long) => FatOp::LConst(long),
             OpCode::LCmp => FatOp::LCmp,
+            OpCode::FCmpG => FatOp::FCmpG,
+            OpCode::FCmpL => FatOp::FCmpL,
             OpCode::F2D => FatOp::F2D,
             OpCode::D2F => FatOp::D2F,
             OpCode::ISub => FatOp::ISub,
@@ -212,6 +246,7 @@ pub(crate) fn expand_ops(ops: &[(OpCode, u16)], class: &ImportedJavaClass) -> Bo
             OpCode::FAdd => FatOp::FAdd,
             OpCode::LAdd => FatOp::LAdd,
             OpCode::IMul => FatOp::IMul,
+            OpCode::LMul => FatOp::LMul,
             OpCode::FMul => FatOp::FMul,
             OpCode::IDiv => FatOp::IDiv,
             OpCode::FDiv => FatOp::FDiv,
@@ -221,7 +256,7 @@ pub(crate) fn expand_ops(ops: &[(OpCode, u16)], class: &ImportedJavaClass) -> Bo
             OpCode::IShl => FatOp::IShl,
             OpCode::LShl => FatOp::LShl,
             OpCode::LUShr => FatOp::LUShr,
-            OpCode::LUShl => FatOp::LUShl,
+            OpCode::IUShr => FatOp::IUShr,
             OpCode::IAnd => FatOp::IAnd,
             OpCode::LAnd => FatOp::LAnd,
             OpCode::IOr => FatOp::IOr,
@@ -229,8 +264,11 @@ pub(crate) fn expand_ops(ops: &[(OpCode, u16)], class: &ImportedJavaClass) -> Bo
             OpCode::IXOr => FatOp::IXOr,
             OpCode::LXOr => FatOp::LXOr,
             OpCode::INeg => FatOp::INeg,
+            OpCode::LNeg => FatOp::LNeg,
             OpCode::I2L => FatOp::I2L,
             OpCode::L2I => FatOp::L2I,
+            OpCode::I2F => FatOp::I2F,
+            OpCode::F2I => FatOp::F2I,
             OpCode::ALoad(index) => FatOp::ALoad(index),
             OpCode::ILoad(index) => FatOp::ILoad(index),
             OpCode::LLoad(index) => FatOp::LLoad(index),
@@ -306,6 +344,10 @@ pub(crate) fn expand_ops(ops: &[(OpCode, u16)], class: &ImportedJavaClass) -> Bo
                 let op_offset: u16 = (op.1 as i32 + op_offset as i32) as u16;
                 FatOp::IfICmpNe(find_op_with_offset(ops, op_offset).unwrap())
             }
+            OpCode::IfACmpEq(op_offset) => {
+                let op_offset: u16 = (op.1 as i32 + op_offset as i32) as u16;
+                FatOp::IfACmpEq(find_op_with_offset(ops, op_offset).unwrap())
+            }
             OpCode::IfIGreterEqual(op_offset) => {
                 let op_offset: u16 = (op.1 as i32 + op_offset as i32) as u16;
                 FatOp::IfIGreterEqual(find_op_with_offset(ops, op_offset).unwrap())
@@ -317,6 +359,10 @@ pub(crate) fn expand_ops(ops: &[(OpCode, u16)], class: &ImportedJavaClass) -> Bo
             OpCode::IfGreterZero(op_offset) => {
                 let op_offset: u16 = (op.1 as i32 + op_offset as i32) as u16;
                 FatOp::IfGreterZero(find_op_with_offset(ops, op_offset).unwrap())
+            }
+            OpCode::IfICmpGreater(op_offset) => {
+                let op_offset: u16 = (op.1 as i32 + op_offset as i32) as u16;
+                FatOp::IfICmpGreater(find_op_with_offset(ops, op_offset).unwrap())
             }
             OpCode::IfLessZero(op_offset) => {
                 let op_offset: u16 = (op.1 as i32 + op_offset as i32) as u16;
@@ -364,6 +410,19 @@ pub(crate) fn expand_ops(ops: &[(OpCode, u16)], class: &ImportedJavaClass) -> Bo
                 let class_name = class.lookup_class(index).unwrap();
                 FatOp::ANewArray(class_name.into())
             }
+            OpCode::NewArray(typeid)=>{
+                match typeid{
+                    4=>FatOp::ZNewArray,
+                    5=>FatOp::CNewArray,
+                    6=>FatOp::FNewArray,
+                    7=>FatOp::DNewArray,
+                    8=>FatOp::BNewArray,
+                    9=>FatOp::SNewArray,
+                    10=>FatOp::INewArray,
+                    11=>FatOp::LNewArray,
+                    0..=3 | 11.. => panic!("Invalid type ID in NewArray Op!"),
+                }
+            }
             OpCode::CheckCast(index) => {
                 let class_name = class.lookup_class(index).unwrap();
                 FatOp::CheckedCast(class_name.into())
@@ -373,6 +432,7 @@ pub(crate) fn expand_ops(ops: &[(OpCode, u16)], class: &ImportedJavaClass) -> Bo
                 FatOp::InstanceOf(class_name.into())
             }
             OpCode::Dup => FatOp::Dup,
+            OpCode::DupX1 => FatOp::DupX1,
             OpCode::Pop => FatOp::Pop,
             OpCode::Pop2 => FatOp::Pop2,
             ///TODO: handle non-static methods(change argc by 1)
@@ -418,6 +478,14 @@ pub(crate) fn expand_ops(ops: &[(OpCode, u16)], class: &ImportedJavaClass) -> Bo
             OpCode::LReturn => FatOp::LReturn,
             OpCode::DReturn => FatOp::DReturn,
             OpCode::AAStore => FatOp::AAStore,
+            OpCode::BAStore => FatOp::BAStore,
+            OpCode::CAStore => FatOp::CAStore,
+            OpCode::DAStore => FatOp::DAStore,
+            OpCode::FAStore => FatOp::FAStore,
+            OpCode::IAStore => FatOp::IAStore,
+            OpCode::LAStore => FatOp::LAStore,
+            OpCode::SAStore => FatOp::SAStore,
+            //OpCode::ZAStore => FatOp::ZAStore,
             OpCode::AALoad => FatOp::AALoad,
             OpCode::BALoad => FatOp::BALoad,
             OpCode::CALoad => FatOp::CALoad,
@@ -425,9 +493,12 @@ pub(crate) fn expand_ops(ops: &[(OpCode, u16)], class: &ImportedJavaClass) -> Bo
             OpCode::FALoad => FatOp::FALoad,
             OpCode::IALoad => FatOp::IALoad,
             OpCode::LALoad => FatOp::LALoad,
+            OpCode::SALoad => FatOp::SALoad,
             OpCode::ArrayLength => FatOp::ArrayLength,
             OpCode::IInc(local, offset) => FatOp::IInc(local, offset),
             OpCode::Throw => FatOp::Throw,
+            OpCode::MonitorEnter => FatOp::MonitorEnter,
+            OpCode::MonitorExit => FatOp::MonitorExit,
             _ => todo!("can't expand op {op:?}"),
         };
         fatops.push(cop);

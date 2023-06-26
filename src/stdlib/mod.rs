@@ -9,7 +9,11 @@ struct STDIO_PRINTLN_IMPL;
 use crate::ExecCtx;
 use crate::ExecException;
 fn insert_exceptions(exec_env: &mut ExecEnv) {
-    exec_env.insert_class(FatClass::new("java/lang/Throwable", "java/lang/Object"));
+    //getStackTrace
+    let mut throwable = FatClass::new("java/lang/Throwable", "java/lang/Object");
+    throwable.add_virtual("getStackTrace()[Ljava/lang/StackTraceElement;","java/lang/Throwable::getStackTrace()[Ljava/lang/StackTraceElement;");
+    throwable.add_virtual("addSuppressed(Ljava/lang/Throwable;)V","java/lang/Throwable::addSuppressed(Ljava/lang/Throwable;)V");
+    exec_env.insert_class(throwable);
     exec_env.insert_class(FatClass::new("java/lang/Exception", "java/lang/Throwable"));
     exec_env.insert_class(FatClass::new(
         "java/lang/RuntimeException",
@@ -48,11 +52,14 @@ pub(crate) fn insert_stdio(exec_env: &mut ExecEnv) {
     exec_env.insert_class(output_stream);
     let filter_output_stream = FatClass::new("java/io/FilterOutputStream", "java/io/OutputStream"); // OutputStream
     exec_env.insert_class(filter_output_stream);
-    let mut print_stream = FatClass::new("java/io/PrintStream", "java/io/FilterOutputStream"); // OutputStream
-
+    let mut print_stream = FatClass::new("java/io/PrintStream", "java/io/FilterOutputStream"); // OutputStrea
     print_stream.add_virtual(
         "println(Ljava/lang/String;)V",
         "java/io/PrintStream::println(Ljava/lang/String;)V",
+    );
+    print_stream.add_virtual(
+        "println(Ljava/lang/Object;)V",
+        "java/io/PrintStream::println(Ljava/lang/Object;)V",
     );
     let print_stream = exec_env.insert_class(print_stream);
 
@@ -65,6 +72,7 @@ pub(crate) fn insert_stdio(exec_env: &mut ExecEnv) {
 
     let mut system = FatClass::new("java/lang/System", "java/lang/Object"); // OutputStream
     system.add_static("out", FieldType::ObjectRef);
+    system.add_static("err", FieldType::ObjectRef);
     let system: ClassRef = exec_env.insert_class(system).unwrap();
     let system_static_out_ref = exec_env.get_static_id(system, &"out").unwrap();
     let system_static_out_obj = Value::ObjectRef(exec_env.new_obj(stdout_stream));

@@ -7,6 +7,7 @@ use crate::{CodeContainer, EnvMemory, ExecException, Value};
 #[derive(Debug)]
 pub(crate) enum BaseIR {
     Dup,
+    DupX1,
     Pop,
     AConst(usize),
     DConst(f64),
@@ -34,18 +35,20 @@ pub(crate) enum BaseIR {
     ISub,
     LSub,
     IMul,
+    LMul,
     FMul,
     IRem,
     IDiv,
     FDiv,
     INeg,
+    LNeg,
     LCmp,
     IOr,
     LOr,
     IXOr,
     LXOr,
     LUShr,
-    LUShl,
+    IUShr,
     InvokeSpecial(usize, u8),
     InvokeStatic(usize, u8),
     InvokeVirtual(usize, u8),
@@ -91,14 +94,28 @@ pub(crate) enum BaseIR {
     DReturn,
     IReturn,
     LReturn,
+    IShr,
+    IShl,
+    LShr,
+    LShl,
     F2D,
     D2F,
     I2L,
     L2I,
+    I2F,
+    F2I,
     New(ClassRef),
     CheckedCast(ClassRef),
     InstanceOf(ClassRef),
     ANewArray(ClassRef),
+    BNewArray,
+    CNewArray,
+    DNewArray,
+    FNewArray,
+    INewArray,
+    LNewArray,
+    SNewArray,
+    ZNewArray,
     IfIGreterEqual(usize),
     IfGreterEqualZero(usize),
     IfLessZero(usize),
@@ -111,12 +128,32 @@ pub(crate) enum BaseIR {
     IfNotNull(usize),
     IfACmpNe(usize),
     IfZero(usize),
+    IfICmpGreater(usize),
+    IfGreterZero(usize),
     GoTo(usize),
     IInc(u8, i8),
     AAStore,
+    BAStore,
+    CAStore,
+    DAStore,
+    FAStore,
+    IAStore,
+    LAStore,
+    SAStore,
+    ZAStore,
     AALoad,
+    BALoad,
+    CALoad,
+    FALoad,
+    DALoad,
+    IALoad,
+    LALoad,
+    SALoad,
+    ZALoad,
     ArrayLength,
     Throw,
+    MonitorEnter,
+    MonitorExit,
     Invalid, //Special op which represents invalid op which should have not been produced.
 }
 fn lookup_static(
@@ -130,10 +167,14 @@ fn lookup_static(
     } else {
         return Err(UnmetDependency::NeedsClass(class_name.into()));
     };
-    let static_id = exec_env.code_container.classes[class_id]
-        .get_static(field_name)
-        .unwrap();
-    Ok(static_id)
+    if let Some(static_id) = exec_env.code_container.classes[class_id]
+        .get_static(field_name){
+            Ok(static_id)
+    }
+    else{
+        panic!("{class_name} does not have static field {field_name}!");
+    }
+    
 }
 fn lookup_field(
     class_name: &str,
@@ -178,6 +219,9 @@ pub(crate) fn into_base(
             FatOp::IfICmpEq(index) => BaseIR::IfICmpEq(*index),
             FatOp::IfLessZero(index) => BaseIR::IfLessZero(*index),
             FatOp::IfICmpLess(index) => BaseIR::IfICmpLess(*index),
+            FatOp::IfICmpGreater(index) => BaseIR::IfICmpGreater(*index),
+            FatOp::IfICmpLessEqual(index) => BaseIR::IfICmpLessEqual(*index),
+            FatOp::IfGreterZero(index) => BaseIR::IfGreterZero(*index),
             FatOp::GoTo(index) => BaseIR::GoTo(*index),
             FatOp::FConst(float) => BaseIR::FConst(*float),
             FatOp::IConst(int) => BaseIR::IConst(*int),
@@ -192,22 +236,30 @@ pub(crate) fn into_base(
             FatOp::IAdd => BaseIR::IAdd,
             FatOp::LAdd => BaseIR::LAdd,
             FatOp::IMul => BaseIR::IMul,
+            FatOp::LMul => BaseIR::LMul,
             FatOp::FMul => BaseIR::FMul,
             FatOp::IDiv => BaseIR::IDiv,
             FatOp::FDiv => BaseIR::FDiv,
             FatOp::IRem => BaseIR::IRem,
             FatOp::INeg => BaseIR::INeg,
+            FatOp::LNeg => BaseIR::LNeg,
+            FatOp::IShr => BaseIR::IShr,
+            FatOp::IShl => BaseIR::IShl,
+            FatOp::LShr => BaseIR::LShr,
+            FatOp::LShl => BaseIR::LShl,
             FatOp::F2D => BaseIR::F2D,
             FatOp::D2F => BaseIR::D2F,
             FatOp::I2L => BaseIR::I2L,
             FatOp::L2I => BaseIR::L2I,
+            FatOp::I2F => BaseIR::I2F,
+            FatOp::F2I => BaseIR::F2I,
             FatOp::LCmp => BaseIR::LCmp,
             FatOp::IOr => BaseIR::IOr,
             FatOp::LOr => BaseIR::LOr,
             FatOp::IXOr => BaseIR::IXOr,
             FatOp::LXOr => BaseIR::LXOr,
             FatOp::LUShr => BaseIR::LUShr,
-            FatOp::LUShl => BaseIR::LUShl,
+            FatOp::IUShr => BaseIR::IUShr,
             FatOp::ALoad(index) => BaseIR::ALoad(*index),
             FatOp::ILoad(index) => BaseIR::ILoad(*index),
             FatOp::AStore(index) => BaseIR::AStore(*index),
@@ -242,6 +294,14 @@ pub(crate) fn into_base(
                 let field_id = lookup_field(class_name, field_name, exec_env)?;
                 BaseIR::AGetField(field_id)
             }
+            FatOp::BGetField(class_name, field_name) => {
+                let field_id = lookup_field(class_name, field_name, exec_env)?;
+                BaseIR::BGetField(field_id)
+            }
+            FatOp::DGetField(class_name, field_name) => {
+                let field_id = lookup_field(class_name, field_name, exec_env)?;
+                BaseIR::DGetField(field_id)
+            }
             FatOp::FGetField(class_name, field_name) => {
                 let field_id = lookup_field(class_name, field_name, exec_env)?;
                 BaseIR::FGetField(field_id)
@@ -261,6 +321,14 @@ pub(crate) fn into_base(
             FatOp::APutField(class_name, field_name) => {
                 let field_id = lookup_field(class_name, field_name, exec_env)?;
                 BaseIR::APutField(field_id)
+            }
+            FatOp::BPutField(class_name, field_name) => {
+                let field_id = lookup_field(class_name, field_name, exec_env)?;
+                BaseIR::BPutField(field_id)
+            }
+            FatOp::DPutField(class_name, field_name) => {
+                let field_id = lookup_field(class_name, field_name, exec_env)?;
+                BaseIR::DPutField(field_id)
             }
             FatOp::FPutField(class_name, field_name) => {
                 let field_id = lookup_field(class_name, field_name, exec_env)?;
@@ -350,6 +418,13 @@ pub(crate) fn into_base(
                 };
                 BaseIR::ANewArray(class_id)
             }
+            FatOp::BNewArray => BaseIR::BNewArray,
+            FatOp::CNewArray => BaseIR::CNewArray,
+            FatOp::DNewArray => BaseIR::DNewArray,
+            FatOp::FNewArray => BaseIR::FNewArray,
+            FatOp::INewArray => BaseIR::INewArray,
+            FatOp::LNewArray => BaseIR::LNewArray,
+            FatOp::SNewArray => BaseIR::SNewArray,
             FatOp::StringConst(string) => BaseIR::AConst(exec_env.const_string(string)),
             FatOp::ClassConst(class_name) => {
                 let class_id = exec_env.code_container.lookup_class(class_name);
@@ -367,14 +442,35 @@ pub(crate) fn into_base(
             FatOp::FReturn => BaseIR::FReturn,
             FatOp::LReturn => BaseIR::LReturn,
             FatOp::Dup => BaseIR::Dup,
+            FatOp::DupX1 => BaseIR::DupX1,
             FatOp::Pop => BaseIR::Pop,
             FatOp::AAStore => BaseIR::AAStore,
+            FatOp::BAStore => BaseIR::BAStore,
+            FatOp::CAStore => BaseIR::CAStore,
+            FatOp::DAStore => BaseIR::DAStore,
+            FatOp::FAStore => BaseIR::FAStore,
+            FatOp::IAStore => BaseIR::IAStore,
+            FatOp::LAStore => BaseIR::LAStore,
+            FatOp::SAStore => BaseIR::SAStore,
+            FatOp::ZAStore => BaseIR::ZAStore,
             FatOp::AALoad => BaseIR::AALoad,
+            FatOp::BALoad => BaseIR::BALoad,
+            FatOp::CALoad => BaseIR::CALoad,
+            FatOp::FALoad => BaseIR::FALoad,
+            FatOp::DALoad => BaseIR::DALoad,
+            FatOp::IALoad => BaseIR::IALoad,
+            FatOp::LALoad => BaseIR::LALoad,
+            FatOp::SALoad => BaseIR::SALoad,
+            FatOp::ZALoad => BaseIR::ZALoad,
             FatOp::ArrayLength => BaseIR::ArrayLength,
+            FatOp::MonitorEnter => BaseIR::MonitorEnter,
+            FatOp::MonitorExit => BaseIR::MonitorExit,
             FatOp::Throw => BaseIR::Throw,
             //TEMPORARY!
             FatOp::InvokeDynamic => BaseIR::Invalid,
             FatOp::InvokeInterface(_, _) => BaseIR::Invalid,
+            // Funky behaviour with doubles and longs.
+            FatOp::Pop2 => BaseIR::Invalid,
             _ => todo!("Can't convert op {op:?} to base IR"),
         };
         //println!("Op:{op:?} new_op:{newop:?}");

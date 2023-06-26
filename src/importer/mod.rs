@@ -329,7 +329,7 @@ pub(crate) enum ConstantItem {
         name_index: u16,
     },
     Utf8(IString),
-    Long(u64),
+    Long(i64),
     Padding,
 }
 impl ConstantItem {
@@ -412,7 +412,7 @@ impl ConstantItem {
                 Ok(Self::Float(float))
             }
             5 => {
-                let long = load_u64(src)?;
+                let long = load_i64(src)?;
                 //println!("long:{long:x}");
                 Ok(Self::Long(long))
             }

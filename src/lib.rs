@@ -35,6 +35,7 @@ enum Value {
     ObjectRef(ObjectRef),
     Float(f32),
     Bool(bool),
+    Char(u16), //Java chars are utf-16
 }
 impl Value {
     fn as_int(&self) -> Option<i32> {
@@ -315,6 +316,12 @@ fn mangle_method_name_partial(method: &str, desc: &str) -> IString {
     format!("{method}{desc}").into_boxed_str()
 }
 impl ExecEnv {
+    fn get_class_virtual_methods(&self, class_id:ClassRef)->Option<Box<[usize]>>{
+        Some(self.code_container.classes.get(class_id)?.virtual_methods().into())
+    }
+    fn get_class_virtual_map(&self, class_id:ClassRef)->Option<HashMap<IString, usize>>{
+        Some(self.code_container.classes.get(class_id)?.virtual_map().clone())
+    }
     fn get_class_field_types(&self, class_id:ClassRef)->Option<Box<[crate::executor::FieldType]>>{
         Some(self.code_container.classes.get(class_id)?.field_types().into())
     }
@@ -363,24 +370,22 @@ impl ExecEnv {
             env_mem,
         };
         //let obj_class = res.lookup_class("java/lang/Object").unwrap();
-        let mut class_class = FatClass::new("java/lang/Class", "java/lang/Object");
-        class_class.add_virtual(
-            "getClassLoader()Ljava/lang/ClassLoader;",
-            "java/lang/Class::getClassLoader()Ljava/lang/ClassLoader;",
-        );
-        class_class.add_virtual(
-            "getResourceAsStream(Ljava/lang/String;)Ljava/io/InputStream;",
-            "java/lang/Class::getResourceAsStream(Ljava/lang/String;)Ljava/io/InputStream;",
-        );
-        class_class.add_virtual(
-            "desiredAssertionStatus()Z",
-            "java/lang/Class::desiredAssertionStatus()Z",
-        );
-        res.insert_class(class_class);
         let mut object_class = FatClass::new("java/lang/Object", "java/lang/Object");
         object_class.add_virtual(
             "getClass()Ljava/lang/Class;",
             "java/lang/Object::getClass()Ljava/lang/Class;",
+        );
+        object_class.add_virtual(
+            "equals(Ljava/lang/Object;)Z",
+            "java/lang/Object::equals(Ljava/lang/Object;)Z"
+        );
+        object_class.add_virtual(
+            "hashCode()I",
+            "java/lang/Object::hashCode()I"
+        );
+        object_class.add_virtual(
+            "toString()Ljava/lang/String;",
+            "java/lang/Object::toString()Ljava/lang/String;"
         );
         let final_object_class = crate::executor::class::finalize(&object_class, &mut res).unwrap();
         let obj_class = res
@@ -397,9 +402,52 @@ impl ExecEnv {
             "split(Ljava/lang/String;)[Ljava/lang/String;",
             "java/lang/String::split(Ljava/lang/String;)[Ljava/lang/String;",
         );
+        string.add_virtual(
+            "startsWith(Ljava/lang/String;)Z",
+            "java/lang/String::startsWith(Ljava/lang/String;)Z",
+        );
+        string.add_virtual(
+            "length()I",
+            "java/lang/String::length()I",
+        );
+        string.add_virtual(
+            "regionMatches(ILjava/lang/String;II)Z",
+            "java/lang/String::regionMatches(ILjava/lang/String;II)Z",
+        );
+        string.add_virtual(
+            "charAt(I)C",
+            "java/lang/String::charAt(I)C",
+        );
         string.add_virtual("isEmpty()Z", "java/lang/String::isEmpty()Z");
         //
         res.insert_class(string);
+        let mut class_class = FatClass::new("java/lang/Class", "java/lang/Object");
+        class_class.add_virtual(
+            "getClassLoader()Ljava/lang/ClassLoader;",
+            "java/lang/Class::getClassLoader()Ljava/lang/ClassLoader;",
+        );
+        class_class.add_virtual(
+            "getResourceAsStream(Ljava/lang/String;)Ljava/io/InputStream;",
+            "java/lang/Class::getResourceAsStream(Ljava/lang/String;)Ljava/io/InputStream;",
+        );
+        class_class.add_virtual(
+            "desiredAssertionStatus()Z",
+            "java/lang/Class::desiredAssertionStatus()Z",
+        );
+        class_class.add_virtual(
+            "getTypeParameters()[Ljava/lang/reflect/TypeVariable;",
+            "java/lang/Class::getTypeParameters()[Ljava/lang/reflect/TypeVariable;",
+        );
+        class_class.add_virtual(
+            "getDeclaredField(Ljava/lang/String;)Ljava/lang/reflect/Field;",
+            "java/lang/Class::getDeclaredField(Ljava/lang/String;)Ljava/lang/reflect/Field;",
+        );
+        class_class.add_virtual(
+            "getName()Ljava/lang/String;",
+            "java/lang/Class::getName()Ljava/lang/String;",
+        );
+        class_class.add_virtual("getSuperclass()Ljava/lang/Class;","java/lang/Class::getSuperclass()Ljava/lang/Class;");
+        res.insert_class(class_class);
         res
     }
     pub(crate) fn load_method(

@@ -37,6 +37,7 @@ impl FieldType {
             Self::ObjectRef => Value::ObjectRef(0),
             Self::Bool => Value::Bool(false),
             Self::Long => Value::Long(0),
+            Self::Char => Value::Char(0),
             _ => todo!("Can't create default value of type {self:?}"),
         }
     }
