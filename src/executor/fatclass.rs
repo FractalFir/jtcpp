@@ -1,23 +1,30 @@
 use super::{field_descriptor_to_ftype, FieldType};
 use crate::importer::ImportedJavaClass;
-use crate::IString;
 use crate::HashMap;
+use crate::IString;
 pub(crate) struct FatClass {
-    virtuals: Vec<(IString,IString)>,
+    virtuals: Vec<(IString, IString)>,
     class_name: IString,
     super_name: IString,
     fields: Vec<(IString, FieldType)>,
     static_fields: Vec<(IString, FieldType)>,
 }
-impl FatClass {   
-    pub(crate) fn add_virtual(&mut self, virtual_partialy_mangled:&str,method_mangled:&str){
-        self.virtuals.push((virtual_partialy_mangled.into(),method_mangled.into()));
+impl FatClass {
+    pub(crate) fn add_virtual(&mut self, virtual_partialy_mangled: &str, method_mangled: &str) {
+        self.virtuals
+            .push((virtual_partialy_mangled.into(), method_mangled.into()));
     }
-    pub(crate) fn add_static(&mut self, name:&str,ftype:FieldType){
-        self.static_fields.push((name.into(),ftype.clone()));
+    pub(crate) fn add_static(&mut self, name: &str, ftype: FieldType) {
+        self.static_fields.push((name.into(), ftype.clone()));
     }
-    pub(crate) fn new(class_name:&str,super_name:&str)->Self{
-        Self{class_name:class_name.into(),super_name:super_name.into(),fields:Vec::new(),virtuals:Vec::new(),static_fields:Vec::new()}
+    pub(crate) fn new(class_name: &str, super_name: &str) -> Self {
+        Self {
+            class_name: class_name.into(),
+            super_name: super_name.into(),
+            fields: Vec::new(),
+            virtuals: Vec::new(),
+            static_fields: Vec::new(),
+        }
     }
     pub(crate) fn class_name(&self) -> &str {
         &self.class_name
@@ -43,13 +50,13 @@ pub(crate) fn expand_class(class: &ImportedJavaClass) -> FatClass {
     let mut fields: Vec<(IString, FieldType)> = Vec::with_capacity(class.fields().len());
     let mut static_fields: Vec<(IString, FieldType)> = Vec::with_capacity(class.fields().len());
     let mut virtuals = Vec::new();
-    for method in class.methods(){
+    for method in class.methods() {
         //Not static, so virtual.
-        if method.is_virtual(class){
+        if method.is_virtual(class) {
             let virtual_name = method.virtual_name(class);
             let real_name = method.mangled_name(class);
             //todo!("VNAME:{virtual_name},RNAME:{real_name}");
-            virtuals.push((virtual_name,real_name));
+            virtuals.push((virtual_name, real_name));
         }
     }
     for field in class.fields() {

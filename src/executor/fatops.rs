@@ -1,7 +1,7 @@
 use super::{field_descriptor_to_ftype, FieldType};
 use crate::importer::{opcodes::OpCode, ImportedJavaClass};
 use crate::IString;
-use crate::{mangle_method_name,mangle_method_name_partial, method_desc_to_argc};
+use crate::{mangle_method_name, mangle_method_name_partial, method_desc_to_argc};
 fn fieldref_to_info(index: u16, class: &ImportedJavaClass) -> (FieldType, IString, IString) {
     let (field_class, nametype) = class.lookup_filed_ref(index).unwrap();
     let field_class = class.lookup_class(field_class).unwrap();
@@ -21,7 +21,10 @@ fn methodref_to_mangled_and_argc(index: u16, class: &ImportedJavaClass) -> (IStr
     let argc = method_desc_to_argc(&descriptor);
     (mangled, argc)
 }
-fn methodref_to_partial_mangled_and_argc(index: u16, class: &ImportedJavaClass) -> (IString,IString, u8) {
+fn methodref_to_partial_mangled_and_argc(
+    index: u16,
+    class: &ImportedJavaClass,
+) -> (IString, IString, u8) {
     let (method_class, nametype) = class.lookup_method_ref(index).unwrap();
     let (name, descriptor) = class.lookup_nametype(nametype).unwrap();
     let method_class = class.lookup_class(method_class).unwrap();
@@ -30,36 +33,60 @@ fn methodref_to_partial_mangled_and_argc(index: u16, class: &ImportedJavaClass) 
     let mangled = mangle_method_name_partial(name, descriptor);
     //let method_id = self.code_container.lookup_or_insert_method(&mangled);
     let argc = method_desc_to_argc(&descriptor);
-    (method_class.into(),mangled, argc)
+    (method_class.into(), mangled, argc)
 }
-#[derive(Debug,Clone)]
+#[derive(Debug, Clone)]
 pub(crate) enum FatOp {
+    AConstNull,
     IConst(i32),
-    LConst(i32),
-    SConst(IString),
+    BConst(i8),
+    SConst(i16),
+    LConst(i64),
+    StringConst(IString),
+    ClassConst(IString),
     FConst(f32),
     DConst(f64),
     ALoad(u8),
-    FLoad(u8),
     DLoad(u8),
+    FLoad(u8),
     ILoad(u8),
+    LLoad(u8),
     AStore(u8),
-    IStore(u8),
+    DStore(u8),
     FStore(u8),
-    IAdd,
+    IStore(u8),
+    LStore(u8),
+    DAdd,
     FAdd,
+    IAdd,
+    LAdd,
     IMul,
     FMul,
     ISub,
+    DSub,
     FSub,
+    LSub,
     IRem,
+    IShr,
+    LShr,
+    IShl,
+    LShl,
     IDiv,
     FDiv,
+    IAnd,
+    LAnd,
+    IOr,
+    LOr,
+    IXOr,
+    LXOr,
+    INeg,
+    LUShr,
+    LUShl,
     InvokeSpecial(IString, u8),
-    InvokeStatic(IString, u8), 
+    InvokeStatic(IString, u8),
     InvokeInterface(IString, u8),
-    InvokeDynamic,//Temporarly ignored(Hard to parse)
-    InvokeVirtual(IString,IString, u8),
+    InvokeDynamic, //Temporarly ignored(Hard to parse)
+    InvokeVirtual(IString, IString, u8),
     ZGetStatic(IString, IString),
     BGetStatic(IString, IString),
     SGetStatic(IString, IString),
@@ -97,31 +124,54 @@ pub(crate) enum FatOp {
     APutField(IString, IString),
     CPutField(IString, IString),
     Dup,
+    Dup2,
     Pop,
+    Pop2,
     Return,
     AReturn,
     FReturn,
     IReturn,
+    DReturn,
+    LReturn,
     F2D,
     D2F,
+    I2L,
+    L2I,
     New(IString),
     ANewArray(IString),
     CheckedCast(IString),
+    InstanceOf(IString),
     AAStore,
     AALoad,
+    BALoad,
+    CALoad,
+    DALoad,
+    FALoad,
+    IALoad,
+    LALoad,
+    LCmp,
     ArrayLength,
     IfIGreterEqual(usize),
+    IfGreterEqualZero(usize),
+    IfGreterZero(usize),
+    IfLessZero(usize),
+    IfLessEqualZero(usize),
     IfNull(usize),
+    IfNotNull(usize),
     IfZero(usize),
+    IfNotZero(usize),
     IfICmpNe(usize),
     IfICmpEq(usize),
+    IfACmpNe(usize),
+    IfICmpLessEqual(usize),
+    IfICmpLess(usize),
     GoTo(usize),
-    IInc(u8,i8),
+    IInc(u8, i8),
     Throw,
 }
-pub(crate) fn find_op_with_offset(ops: &[(OpCode, u16)],idx:u16)->Option<usize>{
-    for (current,op) in ops.iter().enumerate(){
-        if op.1 == idx{
+pub(crate) fn find_op_with_offset(ops: &[(OpCode, u16)], idx: u16) -> Option<usize> {
+    for (current, op) in ops.iter().enumerate() {
+        if op.1 == idx {
             return Some(current);
         }
     }
@@ -136,29 +186,59 @@ pub(crate) fn expand_ops(ops: &[(OpCode, u16)], class: &ImportedJavaClass) -> Bo
                 match const_item {
                     crate::importer::ConstantItem::ConstString { string_index } => {
                         let string = class.lookup_utf8(*string_index).unwrap();
-                        FatOp::SConst(string.into())
+                        FatOp::StringConst(string.into())
+                    }
+                    crate::importer::ConstantItem::Class { name_index } => {
+                        let class_name = class.lookup_utf8(*name_index).unwrap();
+                        FatOp::ClassConst(class_name.into())
                     }
                     _ => todo!("can't handle const!{const_item:?}"),
                 }
             }
+            OpCode::AConstNull => FatOp::AConstNull,
+            OpCode::BIPush(value) => FatOp::BConst(value),
+            OpCode::SIPush(value) => FatOp::SConst(value),
             OpCode::IConst(int) => FatOp::IConst(int),
             OpCode::FConst(float) => FatOp::FConst(float),
-            OpCode::F2D=>FatOp::F2D,
-            OpCode::D2F=>FatOp::D2F,
+            OpCode::LConst(long) => FatOp::LConst(long),
+            OpCode::LCmp => FatOp::LCmp,
+            OpCode::F2D => FatOp::F2D,
+            OpCode::D2F => FatOp::D2F,
             OpCode::ISub => FatOp::ISub,
+            OpCode::DSub => FatOp::DSub,
             OpCode::FSub => FatOp::FSub,
+            OpCode::LSub => FatOp::LSub,
             OpCode::IAdd => FatOp::IAdd,
             OpCode::FAdd => FatOp::FAdd,
+            OpCode::LAdd => FatOp::LAdd,
             OpCode::IMul => FatOp::IMul,
             OpCode::FMul => FatOp::FMul,
             OpCode::IDiv => FatOp::IDiv,
             OpCode::FDiv => FatOp::FDiv,
             OpCode::IRem => FatOp::IRem,
+            OpCode::IShr => FatOp::IShr,
+            OpCode::LShr => FatOp::LShr,
+            OpCode::IShl => FatOp::IShl,
+            OpCode::LShl => FatOp::LShl,
+            OpCode::LUShr => FatOp::LUShr,
+            OpCode::LUShl => FatOp::LUShl,
+            OpCode::IAnd => FatOp::IAnd,
+            OpCode::LAnd => FatOp::LAnd,
+            OpCode::IOr => FatOp::IOr,
+            OpCode::LOr => FatOp::LOr,
+            OpCode::IXOr => FatOp::IXOr,
+            OpCode::LXOr => FatOp::LXOr,
+            OpCode::INeg => FatOp::INeg,
+            OpCode::I2L => FatOp::I2L,
+            OpCode::L2I => FatOp::L2I,
             OpCode::ALoad(index) => FatOp::ALoad(index),
             OpCode::ILoad(index) => FatOp::ILoad(index),
+            OpCode::LLoad(index) => FatOp::LLoad(index),
             OpCode::AStore(index) => FatOp::AStore(index),
-            OpCode::IStore(index) => FatOp::IStore(index),
+            OpCode::DStore(index) => FatOp::DStore(index),
             OpCode::FStore(index) => FatOp::FStore(index),
+            OpCode::IStore(index) => FatOp::IStore(index),
+            OpCode::LStore(index) => FatOp::LStore(index),
             OpCode::FLoad(index) => FatOp::FLoad(index),
             OpCode::GetStatic(index) => {
                 let (ftype, class, name) = fieldref_to_info(index, class);
@@ -202,42 +282,66 @@ pub(crate) fn expand_ops(ops: &[(OpCode, u16)], class: &ImportedJavaClass) -> Bo
                     FieldType::ObjectRef => FatOp::AGetField(class, name),
                 }
             }
-            OpCode::IfICmpEq(op_offset)=>{
-                let curr_offset = op.1;
-                let op_offset:u16 = (curr_offset as i32 + op_offset as i32) as u16;
-                let op_index = find_op_with_offset(ops,op_offset).unwrap();
-                FatOp::IfICmpEq(op_index)
-            },
-            OpCode::IfNull(op_offset)=>{
-                let curr_offset = op.1;
-                let op_offset:u16 = (curr_offset as i32 + op_offset as i32) as u16;
-                let op_index = find_op_with_offset(ops,op_offset).unwrap();
-                FatOp::IfNull(op_index)
-            },
-            OpCode::IfZero(op_offset)=>{
-                let curr_offset = op.1;
-                let op_offset:u16 = (curr_offset as i32 + op_offset as i32) as u16;
-                let op_index = find_op_with_offset(ops,op_offset).unwrap();
-                FatOp::IfZero(op_index)
-            },
-            OpCode::IfICmpNe(op_offset)=>{
-                let curr_offset = op.1;
-                let op_offset:u16 = (curr_offset as i32 + op_offset as i32) as u16;
-                let op_index = find_op_with_offset(ops,op_offset).unwrap();
-                FatOp::IfICmpNe(op_index)
-            },
-            OpCode::IfIGreterEqual(op_offset)=>{
-                let curr_offset = op.1;
-                let op_offset:u16 = (curr_offset as i32 + op_offset as i32) as u16;
-                let op_index = find_op_with_offset(ops,op_offset).unwrap();
-                FatOp::IfIGreterEqual(op_index)
-            },
-            OpCode::GoTo(op_offset)=>{
-                let curr_offset = op.1;
-                let op_offset:u16 = (curr_offset as i32 + op_offset as i32) as u16;
-                let op_index = find_op_with_offset(ops,op_offset).unwrap();
-                FatOp::GoTo(op_index)
-            },
+            OpCode::IfICmpEq(op_offset) => {
+                let op_offset: u16 = (op.1 as i32 + op_offset as i32) as u16;
+                FatOp::IfICmpEq(find_op_with_offset(ops, op_offset).unwrap())
+            }
+            OpCode::IfNull(op_offset) => {
+                let op_offset: u16 = (op.1 as i32 + op_offset as i32) as u16;
+                FatOp::IfNull(find_op_with_offset(ops, op_offset).unwrap())
+            }
+            OpCode::IfNotNull(op_offset) => {
+                let op_offset: u16 = (op.1 as i32 + op_offset as i32) as u16;
+                FatOp::IfNotNull(find_op_with_offset(ops, op_offset).unwrap())
+            }
+            OpCode::IfZero(op_offset) => {
+                let op_offset: u16 = (op.1 as i32 + op_offset as i32) as u16;
+                FatOp::IfZero(find_op_with_offset(ops, op_offset).unwrap())
+            }
+            OpCode::IfNotZero(op_offset) => {
+                let op_offset: u16 = (op.1 as i32 + op_offset as i32) as u16;
+                FatOp::IfZero(find_op_with_offset(ops, op_offset).unwrap())
+            }
+            OpCode::IfICmpNe(op_offset) => {
+                let op_offset: u16 = (op.1 as i32 + op_offset as i32) as u16;
+                FatOp::IfICmpNe(find_op_with_offset(ops, op_offset).unwrap())
+            }
+            OpCode::IfIGreterEqual(op_offset) => {
+                let op_offset: u16 = (op.1 as i32 + op_offset as i32) as u16;
+                FatOp::IfIGreterEqual(find_op_with_offset(ops, op_offset).unwrap())
+            }
+            OpCode::IfGreterEqualZero(op_offset) => {
+                let op_offset: u16 = (op.1 as i32 + op_offset as i32) as u16;
+                FatOp::IfGreterEqualZero(find_op_with_offset(ops, op_offset).unwrap())
+            }
+            OpCode::IfGreterZero(op_offset) => {
+                let op_offset: u16 = (op.1 as i32 + op_offset as i32) as u16;
+                FatOp::IfGreterZero(find_op_with_offset(ops, op_offset).unwrap())
+            }
+            OpCode::IfLessZero(op_offset) => {
+                let op_offset: u16 = (op.1 as i32 + op_offset as i32) as u16;
+                FatOp::IfLessZero(find_op_with_offset(ops, op_offset).unwrap())
+            }
+            OpCode::IfICmpLessEqual(op_offset) => {
+                let op_offset: u16 = (op.1 as i32 + op_offset as i32) as u16;
+                FatOp::IfICmpLessEqual(find_op_with_offset(ops, op_offset).unwrap())
+            }
+            OpCode::IfICmpLessThan(op_offset) => {
+                let op_offset: u16 = (op.1 as i32 + op_offset as i32) as u16;
+                FatOp::IfICmpLess(find_op_with_offset(ops, op_offset).unwrap())
+            }
+            OpCode::IfLessEqualZero(op_offset) => {
+                let op_offset: u16 = (op.1 as i32 + op_offset as i32) as u16;
+                FatOp::IfLessEqualZero(find_op_with_offset(ops, op_offset).unwrap())
+            }
+            OpCode::IfACmpNe(op_offset) => {
+                let op_offset: u16 = (op.1 as i32 + op_offset as i32) as u16;
+                FatOp::IfACmpNe(find_op_with_offset(ops, op_offset).unwrap())
+            }
+            OpCode::GoTo(op_offset) => {
+                let op_offset: u16 = (op.1 as i32 + op_offset as i32) as u16;
+                FatOp::GoTo(find_op_with_offset(ops, op_offset).unwrap())
+            }
             OpCode::PutField(index) => {
                 let (ftype, class, name) = fieldref_to_info(index, class);
                 match ftype {
@@ -252,25 +356,30 @@ pub(crate) fn expand_ops(ops: &[(OpCode, u16)], class: &ImportedJavaClass) -> Bo
                     FieldType::ObjectRef => FatOp::APutField(class, name),
                 }
             }
-            OpCode::New(index)=>{
+            OpCode::New(index) => {
                 let class_name = class.lookup_class(index).unwrap();
                 FatOp::New(class_name.into())
             }
-            OpCode::ANewArray(index)=>{
+            OpCode::ANewArray(index) => {
                 let class_name = class.lookup_class(index).unwrap();
                 FatOp::ANewArray(class_name.into())
             }
-            OpCode::CheckCast(index)=>{
+            OpCode::CheckCast(index) => {
                 let class_name = class.lookup_class(index).unwrap();
                 FatOp::CheckedCast(class_name.into())
             }
+            OpCode::InstanceOf(index) => {
+                let class_name = class.lookup_class(index).unwrap();
+                FatOp::InstanceOf(class_name.into())
+            }
             OpCode::Dup => FatOp::Dup,
             OpCode::Pop => FatOp::Pop,
+            OpCode::Pop2 => FatOp::Pop2,
             ///TODO: handle non-static methods(change argc by 1)
             OpCode::InvokeSpecial(index) => {
                 let (name, mut argc) = methodref_to_mangled_and_argc(index, class);
                 // Either <init> or <cinit>
-                if name.contains('<'){
+                if name.contains('<') {
                     argc += 1;
                 }
                 FatOp::InvokeSpecial(name, argc)
@@ -280,8 +389,8 @@ pub(crate) fn expand_ops(ops: &[(OpCode, u16)], class: &ImportedJavaClass) -> Bo
                 FatOp::InvokeStatic(name, argc)
             }
             OpCode::InvokeVirtual(index) => {
-                let (class,name, argc) = methodref_to_partial_mangled_and_argc(index, class);
-                FatOp::InvokeVirtual(class,name, argc + 1)
+                let (class, name, argc) = methodref_to_partial_mangled_and_argc(index, class);
+                FatOp::InvokeVirtual(class, name, argc + 1)
             }
             OpCode::InvokeInterface(index) => {
                 let (name, argc) = methodref_to_mangled_and_argc(index, class);
@@ -289,12 +398,16 @@ pub(crate) fn expand_ops(ops: &[(OpCode, u16)], class: &ImportedJavaClass) -> Bo
                 FatOp::InvokeInterface(name, argc + 1)
             }
             OpCode::InvokeDynamic(index) => {
-                let (bootstrap_method_attr_index,name_and_type_index) = class.lookup_invoke_dynamic(index).unwrap();
-                let bootstrap_method = class.lookup_bootstrap_method(bootstrap_method_attr_index).unwrap();
-                let (reference_kind,reference_index) = class.lookup_method_handle(bootstrap_method.bootstrap_method_ref).unwrap();
-                println!("reference_kind:{reference_kind},reference_index:{reference_index}");
+                let (bootstrap_method_attr_index, name_and_type_index) =
+                    class.lookup_invoke_dynamic(index).unwrap();
+                let bootstrap_method = class
+                    .lookup_bootstrap_method(bootstrap_method_attr_index)
+                    .unwrap();
+                let (reference_kind, reference_index) = class
+                    .lookup_method_handle(bootstrap_method.bootstrap_method_ref)
+                    .unwrap();
+                //println!("reference_kind:{reference_kind},reference_index:{reference_index}");
                 //let (name, argc) = methodref_to_mangled_and_argc(bootstrap_method.bootstrap_method_ref, class);
-                println!("{bootstrap_method_attr_index},{name_and_type_index}");
                 FatOp::InvokeDynamic
                 //FatOp::InvokeDynamic(name, argc)
             }
@@ -302,10 +415,18 @@ pub(crate) fn expand_ops(ops: &[(OpCode, u16)], class: &ImportedJavaClass) -> Bo
             OpCode::AReturn => FatOp::AReturn,
             OpCode::FReturn => FatOp::FReturn,
             OpCode::IReturn => FatOp::IReturn,
+            OpCode::LReturn => FatOp::LReturn,
+            OpCode::DReturn => FatOp::DReturn,
             OpCode::AAStore => FatOp::AAStore,
             OpCode::AALoad => FatOp::AALoad,
+            OpCode::BALoad => FatOp::BALoad,
+            OpCode::CALoad => FatOp::CALoad,
+            OpCode::DALoad => FatOp::DALoad,
+            OpCode::FALoad => FatOp::FALoad,
+            OpCode::IALoad => FatOp::IALoad,
+            OpCode::LALoad => FatOp::LALoad,
             OpCode::ArrayLength => FatOp::ArrayLength,
-            OpCode::IInc(local,offset)=>FatOp::IInc(local,offset),
+            OpCode::IInc(local, offset) => FatOp::IInc(local, offset),
             OpCode::Throw => FatOp::Throw,
             _ => todo!("can't expand op {op:?}"),
         };

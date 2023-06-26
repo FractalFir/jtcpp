@@ -1,9 +1,9 @@
 mod attribute;
 pub mod opcodes;
+use crate::importer::attribute::BootstrapMethod;
 use crate::IString;
 use attribute::Attribute;
 use opcodes::OpCode;
-use crate::importer::attribute::BootstrapMethod;
 macro_rules! load_fn_impl {
     ($name:ident,$tpe:ty) => {
         pub(crate) fn $name<R: std::io::Read>(src: &mut R) -> std::io::Result<$tpe> {
@@ -58,23 +58,28 @@ pub(crate) struct Method {
     attributes: Box<[Attribute]>,
 }
 impl Method {
-    pub(crate) fn mangled_name(&self,class:&ImportedJavaClass)->IString{
-        format!("{}::{}{}",class.lookup_class(class.this_class()).unwrap(),self.name(class),self.descriptor(class)).into()
+    pub(crate) fn mangled_name(&self, class: &ImportedJavaClass) -> IString {
+        format!(
+            "{}::{}{}",
+            class.lookup_class(class.this_class()).unwrap(),
+            self.name(class),
+            self.descriptor(class)
+        )
+        .into()
     }
-    pub(crate) fn virtual_name(&self,class:&ImportedJavaClass)->IString{
-        format!("{}{}",self.name(class),self.descriptor(class)).into()
+    pub(crate) fn virtual_name(&self, class: &ImportedJavaClass) -> IString {
+        format!("{}{}", self.name(class), self.descriptor(class)).into()
     }
-    pub(crate) fn name<'a>(&'a self,class:&'a ImportedJavaClass)->&str{
+    pub(crate) fn name<'a>(&'a self, class: &'a ImportedJavaClass) -> &str {
         class.lookup_utf8(self.name_index).unwrap()
     }
-     pub(crate) fn descriptor<'a>(&'a self,class:&'a ImportedJavaClass)->&str{
+    pub(crate) fn descriptor<'a>(&'a self, class: &'a ImportedJavaClass) -> &str {
         class.lookup_utf8(self.descriptor_index).unwrap()
     }
-    pub(crate) fn is_virtual(&self,class:&ImportedJavaClass)->bool{
-        if self.access_flags.is_static(){
-           false
-        }
-        else{
+    pub(crate) fn is_virtual(&self, class: &ImportedJavaClass) -> bool {
+        if self.access_flags.is_static() {
+            false
+        } else {
             !self.name(class).contains('<')
         }
     }
@@ -147,33 +152,39 @@ pub(crate) struct ImportedJavaClass {
     attributes: Box<[Attribute]>, //field_names: Box<[IString]>,
 }
 impl ImportedJavaClass {
-    pub(crate) fn lookup_invoke_dynamic(&self,dynamic:u16)->Option<(u16,u16)>{
+    pub(crate) fn lookup_invoke_dynamic(&self, dynamic: u16) -> Option<(u16, u16)> {
         let dynamic = &self.const_items[dynamic as usize - 1];
-        if let ConstantItem::InvokeDynamic {bootstrap_method_attr_index,name_and_type_index} = dynamic {
-            Some((*bootstrap_method_attr_index,*name_and_type_index))
+        if let ConstantItem::InvokeDynamic {
+            bootstrap_method_attr_index,
+            name_and_type_index,
+        } = dynamic
+        {
+            Some((*bootstrap_method_attr_index, *name_and_type_index))
         } else {
             None
         }
-        
     }
-    pub(crate) fn lookup_method_handle(&self,method_handle:u16)->Option<(u8,u16)>{
+    pub(crate) fn lookup_method_handle(&self, method_handle: u16) -> Option<(u8, u16)> {
         let method_handle = &self.const_items[method_handle as usize - 1];
-        if let ConstantItem::MethodHandle {reference_kind,reference_index} = method_handle {
-            Some((*reference_kind,*reference_index))
+        if let ConstantItem::MethodHandle {
+            reference_kind,
+            reference_index,
+        } = method_handle
+        {
+            Some((*reference_kind, *reference_index))
         } else {
             None
         }
-        
     }
-    pub(crate) fn lookup_bootstrap_method(&self,index:u16)->Option<&BootstrapMethod>{
-        for attribute in self.attributes.iter(){
-            if let Attribute::BootstrapMethods {bootstrap_methods} = attribute{
+    pub(crate) fn lookup_bootstrap_method(&self, index: u16) -> Option<&BootstrapMethod> {
+        for attribute in self.attributes.iter() {
+            if let Attribute::BootstrapMethods { bootstrap_methods } = attribute {
                 return bootstrap_methods.get(index as usize);
             }
         }
         None
     }
-    pub(crate) fn name(&self) -> &str{
+    pub(crate) fn name(&self) -> &str {
         self.lookup_class(self.this_class).unwrap()
     }
     pub(crate) fn this_class(&self) -> u16 {
@@ -244,8 +255,7 @@ impl ImportedJavaClass {
         } = method_ref
         {
             Some((*class_index, *name_and_type_index))
-        }
-        else {
+        } else {
             None
         }
     }
@@ -312,8 +322,23 @@ pub(crate) enum ConstantItem {
     MethodType {
         descriptor_index: u16,
     },
+    Module {
+        name_index: u16,
+    },
+    Package {
+        name_index: u16,
+    },
     Utf8(IString),
     Long(u64),
+    Padding,
+}
+impl ConstantItem {
+    fn size(&self) -> u16 {
+        match self {
+            Self::Long(_) | Self::Double(_) => 2,
+            _ => 1,
+        }
+    }
 }
 #[derive(Debug)]
 pub enum ConstantImportError {
@@ -336,10 +361,10 @@ impl AccessFlags {
     fn is_private(&self) -> bool {
         self.mask & 0x0002 != 0
     }
-    fn is_protected(&self) -> bool{
+    fn is_protected(&self) -> bool {
         self.mask & 0x0004 != 0
     }
-    pub fn is_static(&self) -> bool{
+    pub fn is_static(&self) -> bool {
         self.mask & 0x0008 != 0
     }
     fn is_final(&self) -> bool {
@@ -455,9 +480,19 @@ impl ConstantItem {
                     name_and_type_index,
                 })
             }
-            2 | 19.. => {
-                Err(std::io::Error::new(std::io::ErrorKind::Other,"Invalid ConstItem type!").into())
+            19 => {
+                let name_index = load_u16(src)?;
+                Ok(Self::Module { name_index })
             }
+            20 => {
+                let name_index = load_u16(src)?;
+                Ok(Self::Package { name_index })
+            }
+            2 | 21.. => Err(std::io::Error::new(
+                std::io::ErrorKind::Other,
+                "Invalid ConstItem type!",
+            )
+            .into()),
             _ => todo!("Unhandled const info kind: {tag}"),
         }
     }
@@ -477,14 +512,23 @@ pub(crate) fn load_class<R: std::io::Read>(
         return Err(BytecodeImportError::UnsuportedVersion(major, minor));
     }
     let constant_pool_count = load_u16(src)?;
+    //println!("constant_pool_count:{constant_pool_count:?}");
     let mut const_items = Vec::with_capacity(constant_pool_count as usize);
-    for _ in 0..(constant_pool_count - 1) {
+    let mut curr_item = 1;
+    while curr_item < constant_pool_count {
         let ci = ConstantItem::read(src)?;
-        //println!("ci:{ci:?}");
+        //println!("curr_item:{curr_item}\tci:{ci:?}");
+        let ci_size = ci.size();
+        curr_item += ci_size;
         const_items.push(ci);
+        if ci_size == 2 {
+            const_items.push(ConstantItem::Padding);
+        }
     }
     let access_flags = AccessFlags::read(src)?;
+    //println!("access_flags:{access_flags:?}");
     let this_class = load_u16(src)?;
+    //println!("this_class:{this_class}");
     if this_class < 1 || this_class > constant_pool_count {
         return Err(BytecodeImportError::InvalidThisClass);
     }
@@ -566,20 +610,32 @@ pub(crate) fn load_jar(
     let mut zip = zip::ZipArchive::new(src)?;
     let mut classes = Vec::new();
     for i in 0..zip.len() {
+        use std::io::Read;
         let mut file = zip.by_index(i)?;
-        
-        let ext = file.name().split('.').last();
+        let file_name = file.name().to_owned();
+        let mut tmp = Vec::new();
+        file.read_to_end(&mut tmp)?;
+        let mut file = std::io::Cursor::new(tmp);
+        let ext = file_name.split('.').last();
         let ext = if let Some(ext) = ext { ext } else { continue }.to_owned();
         if ext == "class" {
             //println!("Filename: {}", file.name());
             let loaded = load_class(&mut file);
-            match loaded{
-                Ok(class)=>classes.push(class),
-                Err(err)=>{
-                    //let dump_path = 
-                    println!("Error:\"{err:?}\" while loading {}.",file.name())
-                },
-            }    
+            match loaded {
+                Ok(class) => classes.push(class),
+                Err(err) => {
+                    use std::io::Seek;
+                    let dump_path = format!("target/testres/{}", file_name);
+
+                    std::fs::create_dir_all(&dump_path.split('.').next().unwrap())?;
+                    println!("{dump_path}");
+                    let mut out = std::fs::File::create(dump_path).unwrap();
+                    file.rewind().unwrap();
+                    //let mut file = zip.by_index(i)?;
+                    std::io::copy(&mut file, &mut out).unwrap();
+                    println!("Error:\"{err:?}\" while loading {}.", file_name)
+                }
+            }
         }
         if ext == "jar" {
             //println!("Filename: {}", file.name());

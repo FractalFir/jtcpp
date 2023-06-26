@@ -10,10 +10,10 @@ use core::ptr::NonNull;
 pub(crate) enum UnmetDependency {
     NeedsClass(IString),
 }
-impl UnmetDependency{
-    pub(crate) fn dependency(&self)->&str{
-        match self{
-            Self::NeedsClass(class)=>class,
+impl UnmetDependency {
+    pub(crate) fn dependency(&self) -> &str {
+        match self {
+            Self::NeedsClass(class) => class,
         }
     }
 }
@@ -35,6 +35,8 @@ impl FieldType {
             Self::Int => Value::Int(0),
             Self::Float => Value::Float(0.0),
             Self::ObjectRef => Value::ObjectRef(0),
+            Self::Bool => Value::Bool(false),
+            Self::Long => Value::Long(0),
             _ => todo!("Can't create default value of type {self:?}"),
         }
     }
@@ -72,18 +74,18 @@ fn ref_to_cell<T>(ptr: &mut T) -> &UnsafeCell<T> {
 use crate::ClassRef;
 //-> Result<Value, ExecException>
 impl<'env> ExecCtx<'env> {
-    pub fn to_string(&self,objref:ObjectRef)->Option<IString>{
+    pub fn to_string(&self, objref: ObjectRef) -> Option<IString> {
         unsafe { EnvMemory::to_string(self.memory.get(), objref) }
     }
-    pub fn get_virtual(&self,objref:ObjectRef,id:usize)->Option<usize>{
+    pub fn get_virtual(&self, objref: ObjectRef, id: usize) -> Option<usize> {
         let obj_class = self.get_obj_class(objref);
-        self.code_container.get_virtual(obj_class,id)
+        self.code_container.get_virtual(obj_class, id)
     }
-    pub fn get_obj_class(&self, objref:ObjectRef)->ClassRef{
-         unsafe { EnvMemory::get_obj_class(self.memory.get(),objref) }
+    pub fn get_obj_class(&self, objref: ObjectRef) -> ClassRef {
+        unsafe { EnvMemory::get_obj_class(self.memory.get(), objref) }
     }
-    pub fn get_array_length(&self, arrref:ObjectRef)->usize{
-         unsafe { EnvMemory::get_array_length(self.memory.get(),arrref) }
+    pub fn get_array_length(&self, arrref: ObjectRef) -> usize {
+        unsafe { EnvMemory::get_array_length(self.memory.get(), arrref) }
     }
     pub fn get_local(&self, id: u8) -> Option<Value> {
         Some(unsafe {
@@ -102,6 +104,8 @@ impl<'env> ExecCtx<'env> {
         unsafe { EnvMemory::get_static(self.memory.get(), id) }
     }
     fn stack_push(&mut self, value: Value) {
+        assert_ne!(value, Value::Void);
+        println!("stack_push:{value:?}");
         self.data.push(value);
     }
     fn stack_pop(&mut self) -> Option<Value> {
@@ -154,13 +158,13 @@ impl<'env> ExecCtx<'env> {
         };
         callable(call_arg)
     }
-    fn new_obj(&mut self,class:ClassRef)->ObjectRef{
+    fn new_obj(&mut self, class: ClassRef) -> ObjectRef {
         let new_obj = self.code_container.classes[class].new();
         unsafe { EnvMemory::new_obj(self.memory.get(), new_obj) }
     }
-    fn new_array(&mut self,default_value:Value,length:usize)->ObjectRef{
+    fn new_array(&mut self, default_value: Value, length: usize) -> ObjectRef {
         //let new_obj = self.code_container.classes[class].new();
-        unsafe { EnvMemory::new_array(self.memory.get(), default_value,length) }
+        unsafe { EnvMemory::new_array(self.memory.get(), default_value, length) }
     }
     fn invoke_method<'caller>(
         &mut self,

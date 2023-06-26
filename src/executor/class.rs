@@ -1,34 +1,44 @@
 use super::{fatclass::FatClass, FieldType, UnmetDependency};
+use crate::ClassRef;
 use crate::ExecEnv;
 use crate::{IString, Object};
 use std::collections::HashMap;
-use crate::ClassRef;
 pub(crate) struct Class {
     class_id: ClassRef,
-    class_name:IString,
+    class_name: IString,
     virtual_methods: Box<[usize]>,
-    virtual_map:HashMap<IString,usize>,
+    virtual_map: HashMap<IString, usize>,
     //statics: Box<[usize]>,
     statics_map: HashMap<IString, usize>,
     field_map: HashMap<IString, usize>,
     field_types: Box<[FieldType]>,
 }
 impl Class {
-    pub(crate) fn class_name(&self)->&str{
+    pub(crate) fn field_types(&self) -> &[FieldType]{
+        &self.field_types
+    }
+    pub(crate) fn field_map(&self) -> &HashMap<IString, usize>{
+        &self.field_map
+    }
+    pub(crate) fn class_name(&self) -> &str {
         &self.class_name
     }
     //Call *ONLY* once per class, when after adding it to CodeContainer!
-    pub(crate) fn set_id(&mut self,id:ClassRef){
-        assert_eq!(self.class_id,0,"Tried to set class id after linknig!");
+    pub(crate) fn set_id(&mut self, id: ClassRef) {
+        assert_eq!(self.class_id, 0, "Tried to set class id after linknig!");
         self.class_id = id;
     }
-    pub(crate) fn get_virtual(&self, virtual_id:usize)->Option<usize>{
+    pub(crate) fn get_virtual(&self, virtual_id: usize) -> Option<usize> {
         self.virtual_methods.get(virtual_id).copied()
     }
-    pub(crate) fn lookup_virtual(&self, method_name:&str)->Option<usize>{
-        if let Some(idx) = self.virtual_map.get(method_name.into()){Some(*idx)}
-        else{
-            panic!("Could not find method:{method_name} in class {} that has methods:{:?}",self.class_name,self.virtual_map);
+    pub(crate) fn lookup_virtual(&self, method_name: &str) -> Option<usize> {
+        if let Some(idx) = self.virtual_map.get(method_name.into()) {
+            Some(*idx)
+        } else {
+            panic!(
+                "Could not find method:{method_name} in class {} that has methods:{:?}",
+                self.class_name, self.virtual_map
+            );
         }
     }
     pub(crate) fn get_field(&self, name: &str) -> Option<(usize, &FieldType)> {
@@ -85,8 +95,8 @@ pub(crate) fn finalize(class: &FatClass, env: &mut ExecEnv) -> Result<Class, Unm
         //statics.push(static_id);
         statics_map.insert(static_name.clone(), static_id);
     }
-    let mut field_types = Vec::with_capacity(class.fields().len());
-    let mut field_map: HashMap<IString, usize> = HashMap::with_capacity(class.fields().len());
+    let mut field_types:Vec<FieldType> = env.get_class_field_types(super_class).unwrap().into();//Vec::with_capacity(class.fields().len());
+    let mut field_map: HashMap<IString, usize> = env.get_class_field_map(super_class).unwrap();///HashMap::with_capacity(class.fields().len());
     for (field_name, ftype) in class.fields() {
         field_map.insert(field_name.clone(), field_types.len());
         field_types.push((*ftype).clone());
@@ -94,15 +104,15 @@ pub(crate) fn finalize(class: &FatClass, env: &mut ExecEnv) -> Result<Class, Unm
     //This is naive and *DOES NOT* respect inheretnce!
     let mut virtual_methods = Vec::new();
     let mut virtual_map = HashMap::new();
-    for (virtual_method,real_method) in class.virtuals(){
+    for (virtual_method, real_method) in class.virtuals() {
         virtual_methods.push(env.code_container.lookup_or_insert_method(real_method));
-        virtual_map.insert(virtual_method.to_owned(),virtual_methods.len() - 1);
+        virtual_map.insert(virtual_method.to_owned(), virtual_methods.len() - 1);
     }
     let class_id = 0;
     Ok(Class {
-        class_name:class.class_name().into(),
+        class_name: class.class_name().into(),
         class_id,
-        virtual_methods:virtual_methods.into(),
+        virtual_methods: virtual_methods.into(),
         virtual_map,
         //statics: statics.into(),
         statics_map,

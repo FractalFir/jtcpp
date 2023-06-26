@@ -22,8 +22,8 @@ pub(crate) struct MethodParameter {
 }
 #[derive(Debug)]
 pub(crate) struct BootstrapMethod {
-   pub(crate) bootstrap_method_ref: u16,
-   pub(crate) bootstrap_args: Box<[u16]>,
+    pub(crate) bootstrap_method_ref: u16,
+    pub(crate) bootstrap_args: Box<[u16]>,
 }
 #[derive(Debug)]
 pub(crate) enum Attribute {
@@ -62,12 +62,12 @@ pub(crate) enum Attribute {
     Signature {
         signature: u16,
     },
-    ConstantValue{
-        value_index:u16
+    ConstantValue {
+        value_index: u16,
     },
-    EnclosingMethod{
-        class_index:u16,
-        method_index:u16,
+    EnclosingMethod {
+        class_index: u16,
+        method_index: u16,
     },
     Deprecated,
 }
@@ -218,30 +218,34 @@ impl Attribute {
                     exceptions: exceptions.into(),
                 })
             }
-            "ConstantValue"=>{
+            "ConstantValue" => {
                 let value_index = load_u16(src)?;
-                 Ok(Self::ConstantValue{value_index})
-            },
-            "EnclosingMethod"=>{
+                Ok(Self::ConstantValue { value_index })
+            }
+            "EnclosingMethod" => {
                 let class_index = load_u16(src)?;
                 let method_index = load_u16(src)?;
-                Ok(Self::EnclosingMethod{class_index,method_index})
-            },
-            "RuntimeVisibleParameterAnnotations"=>Ok(Self::Unknown), //TODO: Needed in the future.
-            "RuntimeVisibleTypeAnnotations"=>Ok(Self::Unknown), //TODO: Needed in the future.
-            "AnnotationDefault"=>Ok(Self::Unknown), //TODO: Needed in the future.
-            "PermittedSubclasses"=>Ok(Self::Unknown), //TODO: Needed in the future.
-            "RuntimeInvisibleTypeAnnotations"=>Ok(Self::Unknown), //TODO: Not needed, but might be needed in the future.
-            "RuntimeInvisibleParameterAnnotations"=>Ok(Self::Unknown), //TODO: Not needed, but might be needed in the future.
-            "RuntimeInvisibleAnnotations"=>Ok(Self::Unknown), //TODO: Not needed, but might be needed in the future.
-            "ST_TERMINATED" | "()Lio/netty/buffer/ByteBuf;" | "Index" | "Lcom/google/common/cache/ReferenceEntry<TK;TV;>;" | "Ljava/util/Comparator;" | "Ljavax/annotation/Nullable;" | "<init>" | "Lcom/mojang/brigadier/context/CommandContext;" => 
-            return Err(std::io::Error::new(std::io::ErrorKind::Other,format!("Nonsense attribute \"{attribute_name}\""))),//TODO: 100% result of an error parsing a class.
+                Ok(Self::EnclosingMethod {
+                    class_index,
+                    method_index,
+                })
+            }
+            "RuntimeVisibleParameterAnnotations" => Ok(Self::Unknown), //TODO: Needed in the future.
+            "RuntimeVisibleTypeAnnotations" => Ok(Self::Unknown),      //TODO: Needed in the future.
+            "AnnotationDefault" => Ok(Self::Unknown),                  //TODO: Needed in the future.
+            "PermittedSubclasses" => Ok(Self::Unknown),                //TODO: Needed in the future.
+            "RuntimeInvisibleTypeAnnotations" => Ok(Self::Unknown), //TODO: Not needed, but might be needed in the future.
+            "RuntimeInvisibleParameterAnnotations" => Ok(Self::Unknown), //TODO: Not needed, but might be needed in the future.
+            "RuntimeInvisibleAnnotations" => Ok(Self::Unknown), //TODO: Not needed, but might be needed in the future.
             _ => {
-                if attribute_name.len() < 5{
-                    return Err(std::io::Error::new(std::io::ErrorKind::Other,format!("Nonsense attribute \"{attribute_name}\"")));
+                if attribute_name.len() < 8 || attribute_name.contains(".java"){
+                    return Err(std::io::Error::new(
+                        std::io::ErrorKind::Other,
+                        format!("Nonsense attribute \"{attribute_name}\""),
+                    ));
                 }
                 todo!("Can't read attributes of type {attribute_name}!")
-            },
+            }
         }
     }
     pub(crate) fn read<R: std::io::Read>(
@@ -250,14 +254,27 @@ impl Attribute {
     ) -> Result<Self, std::io::Error> {
         let attribute_name_index = load_u16(src)?;
         //assert!(attribute_name_index > 0);
-        if attribute_name_index == 0{
-            return Err(std::io::Error::new(std::io::ErrorKind::Other,"AttributeNameIndex is 0!"));
+        if attribute_name_index == 0 {
+            return Err(std::io::Error::new(
+                std::io::ErrorKind::Other,
+                "AttributeNameIndex is 0!",
+            ));
         }
-        let attribute_name = &const_items.get((attribute_name_index - 1) as usize).ok_or_else(||{std::io::Error::new(std::io::ErrorKind::Other,"AttributeNameIndex is outside ConstItem.")})?;
+        let attribute_name = &const_items
+            .get((attribute_name_index - 1) as usize)
+            .ok_or_else(|| {
+                std::io::Error::new(
+                    std::io::ErrorKind::Other,
+                    "AttributeNameIndex is outside ConstItem.",
+                )
+            })?;
         let attribute_name = if let ConstantItem::Utf8(attribute_name) = attribute_name {
             attribute_name
         } else {
-            return Err(std::io::Error::new(std::io::ErrorKind::Other,"Atribute name must be a UTF8 string!"));
+            return Err(std::io::Error::new(
+                std::io::ErrorKind::Other,
+                "Atribute name must be a UTF8 string!",
+            ));
         };
         let attribute_length = load_u32(src)? as usize;
         let mut attibute_data = vec![0; attribute_length];

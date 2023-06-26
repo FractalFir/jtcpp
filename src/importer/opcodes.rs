@@ -84,13 +84,14 @@ pub(crate) enum OpCode {
     IfACmpEq(i16),
     IfIGreterEqual(i16),
     IfGreterEqualZero(i16), // aka IfGe
-    IfGreterZero(i16), // aka IfGt
-    IfLessZero(i16), // aka IfLt
-    IfLessEqualZero(i16), // aka IfLt
+    IfGreterZero(i16),      // aka IfGt
+    IfLessZero(i16),        // aka IfLt
+    IfLessEqualZero(i16),   // aka IfLt
     GoTo(i16),
     Dup,
     DupX1,
     Dup2X1,
+    Dup2X2,
     DupX2,
     Dup2,
     Swap,
@@ -99,7 +100,7 @@ pub(crate) enum OpCode {
     New(u16),
     NewArray(u8),
     ANewArray(u16),
-    MultiNewArray(u16,u8),
+    MultiNewArray(u16, u8),
     BIPush(i8),
     SIPush(i16),
     ArrayLength,
@@ -137,7 +138,7 @@ pub(crate) enum OpCode {
     L2I,
     L2F,
     L2D,
-    LCmp, //Compare two longs. Push 0 if same, 1 if a > b, -1 if b > a
+    LCmp,  //Compare two longs. Push 0 if same, 1 if a > b, -1 if b > a
     FCmpL, //Compare two floats. Push 0 if same, 1 if a > b, -1 if b > a, and -1 if a or b is NaN.
     FCmpG, //Compare two floats. Push 0 if same, 1 if a > b, -1 if b > a, and 1 if a or b is NaN.
     DCmpL, //Compare two doubles. Push 0 if same, 1 if a > b, -1 if b > a, and -1 if a or b is NaN.
@@ -146,10 +147,20 @@ pub(crate) enum OpCode {
     MonitorExit,
     Reserved, // Should never appear, sign of error.
 }
-impl OpCode{
-    //Checks if op is a valid method terminator(return or throw, or GoTo that goes back). 
-    fn is_term(&self)->bool{
-        matches!(self,Self::Return | Self::AReturn | Self::IReturn | Self::FReturn | Self::LReturn | Self::DReturn | Self::Throw | Self::GoTo(..=-1))
+impl OpCode {
+    //Checks if op is a valid method terminator(return or throw, or GoTo that goes back).
+    fn is_term(&self) -> bool {
+        matches!(
+            self,
+            Self::Return
+                | Self::AReturn
+                | Self::IReturn
+                | Self::FReturn
+                | Self::LReturn
+                | Self::DReturn
+                | Self::Throw
+                | Self::GoTo(..=-1)
+        )
     }
 }
 pub(crate) fn load_ops<R: std::io::Read>(
@@ -157,6 +168,7 @@ pub(crate) fn load_ops<R: std::io::Read>(
     code_length: u32,
 ) -> Result<Vec<(OpCode, u16)>, std::io::Error> {
     let mut curr_offset = 0;
+
     let mut ops = Vec::with_capacity(code_length as usize);
     //println!("\nMethod begin\n");
     while (curr_offset as u32) < code_length {
@@ -177,19 +189,19 @@ pub(crate) fn load_ops<R: std::io::Read>(
             0x10 => {
                 let value = load_i8(src)?;
                 curr_offset += 1;
-                OpCode::BIPush(value)   
-            },
-            0x11=>{
+                OpCode::BIPush(value)
+            }
+            0x11 => {
                 let value = load_i16(src)?;
                 curr_offset += 2;
-                OpCode::SIPush(value)   
-            },
+                OpCode::SIPush(value)
+            }
             0x12 => {
                 let constant_pool_index = load_u8(src)?;
                 curr_offset += 1;
                 OpCode::LoadConst(constant_pool_index as u16)
             }
-            0x13 => {
+            0x13 | 0x14 => {
                 let constant_pool_index = load_u16(src)?;
                 curr_offset += 2;
                 OpCode::LoadConst(constant_pool_index)
@@ -204,12 +216,12 @@ pub(crate) fn load_ops<R: std::io::Read>(
                 curr_offset += 1;
                 OpCode::LLoad(index)
             }
-            0x17 =>{
+            0x17 => {
                 let index = load_u8(src)?;
                 curr_offset += 1;
                 OpCode::FLoad(index)
             }
-            0x18 =>{
+            0x18 => {
                 let index = load_u8(src)?;
                 curr_offset += 1;
                 OpCode::DLoad(index)
@@ -222,8 +234,8 @@ pub(crate) fn load_ops<R: std::io::Read>(
             0x1a..=0x1d => OpCode::ILoad(op - 0x1a),
             0x1e..=0x21 => OpCode::LLoad(op - 0x1e),
             0x22..=0x25 => OpCode::FLoad(op - 0x22),
-            0x22..=0x25 => OpCode::DLoad(op - 0x22),
-            0x26..=0x2d => OpCode::ALoad(op - 0x26),
+            0x26..=0x29 => OpCode::DLoad(op - 0x26),
+            0x2a..=0x2d => OpCode::ALoad(op - 0x2a),
             0x2e => OpCode::IALoad,
             0x2f => OpCode::LALoad,
             0x30 => OpCode::FALoad,
@@ -256,7 +268,7 @@ pub(crate) fn load_ops<R: std::io::Read>(
             0x3f..=0x42 => OpCode::LStore(op - 0x3f),
             0x43..=0x46 => OpCode::FStore(op - 0x43),
             0x47..=0x4a => OpCode::DStore(op - 0x47),
-            0x4b..=0x4e => OpCode::AStore(op - 0x4b), 
+            0x4b..=0x4e => OpCode::AStore(op - 0x4b),
             0x36 => {
                 let index = load_u8(src)?;
                 curr_offset += 1;
@@ -277,7 +289,8 @@ pub(crate) fn load_ops<R: std::io::Read>(
             0x5b => OpCode::DupX2,
             0x5c => OpCode::Dup2,
             0x5d => OpCode::Dup2X1,
-            0x5f => OpCode::Swap, 
+            0x5e => OpCode::Dup2X2,
+            0x5f => OpCode::Swap,
             0x60 => OpCode::IAdd,
             0x61 => OpCode::LAdd,
             0x62 => OpCode::FAdd,
@@ -313,7 +326,7 @@ pub(crate) fn load_ops<R: std::io::Read>(
             0x80 => OpCode::IOr,
             0x81 => OpCode::LOr,
             0x82 => OpCode::IXOr,
-            0x83 => OpCode::LXOr, 
+            0x83 => OpCode::LXOr,
             0x84 => {
                 let var = load_u8(src)?;
                 let incr = load_i8(src)?;
@@ -355,17 +368,17 @@ pub(crate) fn load_ops<R: std::io::Read>(
                 curr_offset += 2;
                 OpCode::IfLessZero(offset)
             }
-            0x9c=>{
+            0x9c => {
                 let offset = load_i16(src)?;
                 curr_offset += 2;
                 OpCode::IfGreterEqualZero(offset)
             }
-            0x9d=>{
+            0x9d => {
                 let offset = load_i16(src)?;
                 curr_offset += 2;
                 OpCode::IfGreterZero(offset)
             }
-            0x9e=>{
+            0x9e => {
                 let offset = load_i16(src)?;
                 curr_offset += 2;
                 OpCode::IfLessEqualZero(offset)
@@ -375,12 +388,12 @@ pub(crate) fn load_ops<R: std::io::Read>(
                 curr_offset += 2;
                 OpCode::IfICmpEq(offset)
             }
-            0xa0=>{
+            0xa0 => {
                 let offset = load_i16(src)?;
                 curr_offset += 2;
                 OpCode::IfICmpNe(offset)
-            },
-            0xa1 =>{
+            }
+            0xa1 => {
                 let offset = load_i16(src)?;
                 curr_offset += 2;
                 OpCode::IfICmpLessThan(offset)
@@ -390,22 +403,22 @@ pub(crate) fn load_ops<R: std::io::Read>(
                 curr_offset += 2;
                 OpCode::IfIGreterEqual(offset)
             }
-            0xa3 =>{
+            0xa3 => {
                 let offset = load_i16(src)?;
                 curr_offset += 2;
                 OpCode::IfICmpGreater(offset)
             }
-            0xa4 =>{
+            0xa4 => {
                 let offset = load_i16(src)?;
                 curr_offset += 2;
                 OpCode::IfICmpLessEqual(offset)
             }
-            0xa5=> {
+            0xa5 => {
                 let offset = load_i16(src)?;
                 curr_offset += 2;
                 OpCode::IfACmpEq(offset)
             }
-            0xa6=> {
+            0xa6 => {
                 let offset = load_i16(src)?;
                 curr_offset += 2;
                 OpCode::IfACmpNe(offset)
@@ -416,7 +429,10 @@ pub(crate) fn load_ops<R: std::io::Read>(
                 OpCode::GoTo(offset)
             }
             0xab | 0xaa => {
-                return Err(std::io::Error::new(std::io::ErrorKind::Other,"Switch statements not supported!"));
+                return Err(std::io::Error::new(
+                    std::io::ErrorKind::Other,
+                    "Switch statements not supported!",
+                ));
             }
             0xac => OpCode::IReturn,
             0xad => OpCode::LReturn,
@@ -463,14 +479,14 @@ pub(crate) fn load_ops<R: std::io::Read>(
                 let constant_pool_index = load_u16(src)?;
                 let _count = load_u8(src)?;
                 let zero = load_u8(src)?;
-                assert_eq!(zero,0);
+                assert_eq!(zero, 0);
                 curr_offset += 4;
                 OpCode::InvokeInterface(constant_pool_index)
             }
             0xba => {
                 let constant_pool_index = load_u16(src)?;
                 let zeroes = load_u16(src)?;
-                assert_eq!(zeroes,0);
+                assert_eq!(zeroes, 0);
                 curr_offset += 4;
                 OpCode::InvokeDynamic(constant_pool_index)
             }
@@ -482,7 +498,7 @@ pub(crate) fn load_ops<R: std::io::Read>(
             0xbc => {
                 let primitive_type = load_u8(src)?;
                 curr_offset += 1;
-               //println!("primitive_type:{}",primitive_type);
+                //println!("primitive_type:{}",primitive_type);
                 OpCode::NewArray(primitive_type)
             }
             0xbd => {
@@ -505,13 +521,16 @@ pub(crate) fn load_ops<R: std::io::Read>(
             0xc2 => OpCode::MonitorEnter,
             0xc3 => OpCode::MonitorExit,
             0xc4 => {
-                return Err(std::io::Error::new(std::io::ErrorKind::Other,"Wide ops not supported!"));
+                return Err(std::io::Error::new(
+                    std::io::ErrorKind::Other,
+                    "Wide ops not supported!",
+                ));
             }
             0xc5 => {
                 let constant_pool_index = load_u16(src)?;
                 let dimensions = load_u8(src)?;
                 curr_offset += 3;
-                OpCode::MultiNewArray(constant_pool_index,dimensions)
+                OpCode::MultiNewArray(constant_pool_index, dimensions)
             }
             0xc6 => {
                 let offset = load_i16(src)?;
@@ -523,7 +542,12 @@ pub(crate) fn load_ops<R: std::io::Read>(
                 curr_offset += 2;
                 OpCode::IfNotNull(offset)
             }
-            0xcb..=0xfd=>return Err(std::io::Error::new(std::io::ErrorKind::Other,format!("Invalid(reserved) opcode 0x{op:x}!"))),//OpCode::Reserved, 
+            0xcb..=0xfd => {
+                return Err(std::io::Error::new(
+                    std::io::ErrorKind::Other,
+                    format!("Invalid(reserved) opcode 0x{op:x}!"),
+                ))
+            } //OpCode::Reserved,
             _ => todo!("Unhandled opcode:0x{op:x}!"),
         };
         ops.push((decoded_op, op_offset));

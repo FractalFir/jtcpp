@@ -9,9 +9,9 @@ pub type ClassRef = usize;
 pub type StaticRef = usize;
 pub type MethodRef = usize;
 use crate::executor::baseir::BaseIR;
+use crate::executor::fatclass::FatClass;
 use executor::class::Class;
 use executor::ExecCtx;
-use crate::executor::fatclass::FatClass;
 enum Method {
     BaseIR { ops: Box<[BaseIR]> },
     Invokable(Box<dyn Invokable>),
@@ -31,8 +31,10 @@ impl Method {
 enum Value {
     Void,
     Int(i32),
+    Long(i64),
     ObjectRef(ObjectRef),
     Float(f32),
+    Bool(bool),
 }
 impl Value {
     fn as_int(&self) -> Option<i32> {
@@ -60,31 +62,38 @@ enum Object {
         class_id: ClassRef,
         values: Box<[Value]>,
     },
-    Array{
+    Array {
         //array_class_id:ClassRef,
         //element_class_id:ClassRef,
-        values:Box<[Value]>,
+        values: Box<[Value]>,
     },
     String(IString),
 }
+const CLASS_TYPE_ID: ClassRef = 2;
 impl Object {
-    pub(crate) fn get_array_length(&self) -> usize{
-        match self{
-            Self::Array {values, .. } => values.len(),
-            _=>0,
+    pub(crate) fn new_class(class_id: ClassRef) -> Self {
+        Self::Object {
+            class_id: CLASS_TYPE_ID,
+            values: [Value::ObjectRef(class_id)].into(),
         }
     }
-    pub fn to_string(&self)->Option<IString>{
-        match self{
-            Self::Object{..}=>todo!("Can convert only strings to strings"),
-            Self::String(string)=>Some(string.to_owned()),
+    pub(crate) fn get_array_length(&self) -> usize {
+        match self {
+            Self::Array { values, .. } => values.len(),
+            _ => 0,
+        }
+    }
+    pub fn to_string(&self) -> Option<IString> {
+        match self {
+            Self::Object { .. } => todo!("Can convert only strings to strings"),
+            Self::String(string) => Some(string.to_owned()),
             Self::Array { .. } => todo!("Can't convert arrays to string!"),
         }
     }
-    pub fn get_class(&self)->ClassRef{
-        match self{
-            Self::Object{class_id,..}=>*class_id,
-            Self::String(_)=>1,
+    pub fn get_class(&self) -> ClassRef {
+        match self {
+            Self::Object { class_id, .. } => *class_id,
+            Self::String(_) => 1,
             Self::Array { .. } => todo!("Can't return array class yet!"),
         }
     }
@@ -107,17 +116,17 @@ struct EnvMemory {
     statics: Vec<Value>,
     lock: std::sync::Mutex<()>,
 }
-const NULL_REF:ObjectRef = 0;
+const NULL_REF: ObjectRef = 0;
 impl EnvMemory {
-    fn to_string(this: *mut Self, obj_ref: ObjectRef)->Option<IString> {
+    fn to_string(this: *mut Self, obj_ref: ObjectRef) -> Option<IString> {
         let lock = unsafe { (*this).lock.lock().expect("poisoned mutex!") };
-        let obj = unsafe { &(*this).objects[obj_ref]};
+        let obj = unsafe { &(*this).objects[obj_ref] };
         let res = obj.to_string();
         drop(lock);
         res
     }
-    fn get_obj_class(this: *const Self, obj:ObjectRef)->ClassRef{
-        if obj == NULL_REF{
+    fn get_obj_class(this: *const Self, obj: ObjectRef) -> ClassRef {
+        if obj == NULL_REF {
             panic!("Null reference!");
         }
         let lock = unsafe { (*this).lock.lock().expect("poisoned mutex!") };
@@ -130,10 +139,10 @@ impl EnvMemory {
         unsafe { (*this).objects.push(new_obj) };
         unsafe { (*this).objects.len() - 1 }
     }
-    fn new_array(this: *mut Self, default_value:Value,length:usize) -> ObjectRef {
-        let mut new_array = Object::Array{
+    fn new_array(this: *mut Self, default_value: Value, length: usize) -> ObjectRef {
+        let mut new_array = Object::Array {
             //element_class_id:
-            values:vec![default_value;length].into()
+            values: vec![default_value; length].into(),
         };
         unsafe { (*this).objects.push(new_array) };
         unsafe { (*this).objects.len() - 1 }
@@ -144,10 +153,7 @@ impl EnvMemory {
         drop(lock);
         val
     }
-    pub(crate) fn get_array_length(
-        this: *const Self,
-        obj_ref: ObjectRef,
-    ) -> usize {
+    pub(crate) fn get_array_length(this: *const Self, obj_ref: ObjectRef) -> usize {
         let lock = unsafe { (*this).lock.lock().expect("poisoned mutex!") };
         let val = unsafe { (*this).objects[obj_ref].get_array_length() };
         drop(lock);
@@ -188,22 +194,23 @@ impl EnvMemory {
         }
     }
 }
-struct UnfinalizedMethod{
-    ops:Box<[crate::executor::fatops::FatOp]>,
-    method_id:MethodRef,
+struct UnfinalizedMethod {
+    ops: Box<[crate::executor::fatops::FatOp]>,
+    method_id: MethodRef,
 }
 struct CodeContainer {
     classes: Vec<Class>,
     class_names: HashMap<IString, usize>,
     methods: Vec<Option<Method>>,
     method_names: HashMap<IString, usize>,
-    static_strings:HashMap<IString,usize>,
+    static_strings: HashMap<IString, ObjectRef>,
+    const_classes: HashMap<ClassRef, ObjectRef>,
     // have some unresolved dependencies.
-    unfinalized_classes:HashMap<IString,Vec<FatClass>>,
-    unfinalized_methods:HashMap<IString,Vec<UnfinalizedMethod>>
+    unfinalized_classes: HashMap<IString, Vec<FatClass>>,
+    unfinalized_methods: HashMap<IString, Vec<UnfinalizedMethod>>,
 }
 impl CodeContainer {
-    fn get_virtual(&self,class:ClassRef,id:usize)->Option<usize>{
+    fn get_virtual(&self, class: ClassRef, id: usize) -> Option<usize> {
         self.classes[class].get_virtual(id)
     }
     //pub fn lookup_virutal(&self,id:
@@ -243,9 +250,10 @@ impl CodeContainer {
             classes,
             class_names,
             method_names,
-            unfinalized_classes:HashMap::new(),
-            unfinalized_methods:HashMap::new(),
-            static_strings:HashMap::new(),
+            unfinalized_classes: HashMap::new(),
+            unfinalized_methods: HashMap::new(),
+            static_strings: HashMap::new(),
+            const_classes: HashMap::new(),
         };
         res.set_or_replace_class("java/lang/Object", object_class);
         res
@@ -264,8 +272,8 @@ fn arg_counter() {
     assert_eq!(method_desc_to_argc("(IL)I"), 2);
     assert_eq!(method_desc_to_argc("(IJF)I"), 3);
     assert_eq!(method_desc_to_argc("(IJF)"), 3);
-    assert_eq!(method_desc_to_argc("(Ljava/lang/Object;)V"),1);
-    assert_eq!(method_desc_to_argc("([[[D)V"),1);
+    assert_eq!(method_desc_to_argc("(Ljava/lang/Object;)V"), 1);
+    assert_eq!(method_desc_to_argc("([[[D)V"), 1);
     //
 }
 fn method_desc_to_argc(desc: &str) -> u8 {
@@ -284,17 +292,15 @@ fn method_desc_to_argc(desc: &str) -> u8 {
     let span = &desc[(char_beg + 1)..char_end];
     let mut res = 0;
     let mut ident = false;
-    for curr in span.chars(){
-        if ident{
-            if matches!(curr,';') {
-               ident = false; 
+    for curr in span.chars() {
+        if ident {
+            if matches!(curr, ';') {
+                ident = false;
             }
             continue;
-        }
-        else if curr == 'L'{
+        } else if curr == 'L' {
             ident = true;
-        }
-        else if curr == '['{
+        } else if curr == '[' {
             continue;
         }
         res += 1;
@@ -309,18 +315,45 @@ fn mangle_method_name_partial(method: &str, desc: &str) -> IString {
     format!("{method}{desc}").into_boxed_str()
 }
 impl ExecEnv {
-    fn dep_status(&self){
-        println!("unfinalized classes:{}, unfinalized methods{}",self.code_container.unfinalized_classes.len(),self.code_container.unfinalized_methods.len());
+    fn get_class_field_types(&self, class_id:ClassRef)->Option<Box<[crate::executor::FieldType]>>{
+        Some(self.code_container.classes.get(class_id)?.field_types().into())
     }
-    fn const_string(&mut self,string:&str)->ObjectRef{
-        *self.code_container.static_strings.entry(string.into()).or_insert_with(||{
-             let new_obj = Object::String(string.into());
-             let obj_ref:ObjectRef = EnvMemory::new_obj(&mut self.env_mem as *mut _, new_obj);
-             //Prevent GC from cleaning it up.
-             self.env_mem.insert_static(Value::ObjectRef(obj_ref));
-             obj_ref
-        })
-    }  
+    fn get_class_field_map(&self, class_id:ClassRef)->Option<HashMap<IString, usize>>{
+        Some(self.code_container.classes.get(class_id)?.field_map().clone())
+    }
+    fn dep_status(&self) {
+        println!(
+            "unfinalized classes:{}, unfinalized methods{}",
+            self.code_container.unfinalized_classes.len(),
+            self.code_container.unfinalized_methods.len()
+        );
+    }
+    fn const_string(&mut self, string: &str) -> ObjectRef {
+        *self
+            .code_container
+            .static_strings
+            .entry(string.into())
+            .or_insert_with(|| {
+                let new_obj = Object::String(string.into());
+                let obj_ref: ObjectRef = EnvMemory::new_obj(&mut self.env_mem as *mut _, new_obj);
+                //Prevent GC from cleaning it up.
+                self.env_mem.insert_static(Value::ObjectRef(obj_ref));
+                obj_ref
+            })
+    }
+    fn const_class(&mut self, class_id: ClassRef) -> ObjectRef {
+        *self
+            .code_container
+            .const_classes
+            .entry(class_id)
+            .or_insert_with(|| {
+                let new_obj = Object::new_class(class_id);
+                let obj_ref: ObjectRef = EnvMemory::new_obj(&mut self.env_mem as *mut _, new_obj);
+                //Prevent GC from cleaning it up.
+                self.env_mem.insert_static(Value::ObjectRef(obj_ref));
+                obj_ref
+            })
+    }
     pub fn new() -> Self {
         let env_mem = EnvMemory::new();
         let code_container = CodeContainer::new();
@@ -330,21 +363,41 @@ impl ExecEnv {
             env_mem,
         };
         //let obj_class = res.lookup_class("java/lang/Object").unwrap();
-        let mut class_class = FatClass::new("java/lang/Class","java/lang/Object");
-        class_class.add_virtual("getClassLoader()Ljava/lang/ClassLoader;","java/lang/Class::getClassLoader()Ljava/lang/ClassLoader;");
-        
+        let mut class_class = FatClass::new("java/lang/Class", "java/lang/Object");
+        class_class.add_virtual(
+            "getClassLoader()Ljava/lang/ClassLoader;",
+            "java/lang/Class::getClassLoader()Ljava/lang/ClassLoader;",
+        );
+        class_class.add_virtual(
+            "getResourceAsStream(Ljava/lang/String;)Ljava/io/InputStream;",
+            "java/lang/Class::getResourceAsStream(Ljava/lang/String;)Ljava/io/InputStream;",
+        );
+        class_class.add_virtual(
+            "desiredAssertionStatus()Z",
+            "java/lang/Class::desiredAssertionStatus()Z",
+        );
         res.insert_class(class_class);
-        let mut object_class = FatClass::new("java/lang/Object","java/lang/Object");
-        object_class.add_virtual("getClass()Ljava/lang/Class;","java/lang/Object::getClass()Ljava/lang/Class;");
-        let final_object_class = crate::executor::class::finalize(&object_class,&mut res).unwrap();
-        let obj_class = res.code_container.set_or_replace_class("java/lang/Object",final_object_class);
+        let mut object_class = FatClass::new("java/lang/Object", "java/lang/Object");
+        object_class.add_virtual(
+            "getClass()Ljava/lang/Class;",
+            "java/lang/Object::getClass()Ljava/lang/Class;",
+        );
+        let final_object_class = crate::executor::class::finalize(&object_class, &mut res).unwrap();
+        let obj_class = res
+            .code_container
+            .set_or_replace_class("java/lang/Object", final_object_class);
         let null_obj = res.new_obj(obj_class);
         res.env_mem.insert_static(Value::ObjectRef(null_obj));
-        let obj_init = res.code_container.lookup_or_insert_method("java/lang/Object::<init>()V");
-        res.replace_method_with_extern(obj_init,||{});
-        let mut string = FatClass::new("java/lang/String","java/lang/Object");
-        string.add_virtual("split(Ljava/lang/String;)[Ljava/lang/String;","java/lang/String::split(Ljava/lang/String;)[Ljava/lang/String;");
-        string.add_virtual("isEmpty()Z","java/lang/String::isEmpty()Z");
+        let obj_init = res
+            .code_container
+            .lookup_or_insert_method("java/lang/Object::<init>()V");
+        res.replace_method_with_extern(obj_init, || {});
+        let mut string = FatClass::new("java/lang/String", "java/lang/Object");
+        string.add_virtual(
+            "split(Ljava/lang/String;)[Ljava/lang/String;",
+            "java/lang/String::split(Ljava/lang/String;)[Ljava/lang/String;",
+        );
+        string.add_virtual("isEmpty()Z", "java/lang/String::isEmpty()Z");
         //
         res.insert_class(string);
         res
@@ -372,20 +425,40 @@ impl ExecEnv {
         let af = method.access_flags();
         let is_static = af.is_static();
         //println!("mangled:{mangled}");
-        self.insert_method(&fat,&mangled);
+        self.insert_method(&fat, &mangled);
     }
-    fn insert_method(&mut self,ops:&[crate::executor::fatops::FatOp],mangled:&str){
+    fn insert_method(&mut self, ops: &[crate::executor::fatops::FatOp], mangled: &str) {
         let method_id = self.code_container.lookup_or_insert_method(&mangled);
-        match crate::executor::baseir::into_base(&ops, self){
-            Ok(baseir) =>self.code_container.methods[method_id] = Some(Method::BaseIR { ops: baseir }),
-            Err(err) => self.code_container.unfinalized_methods.entry(err.dependency().into()).or_insert(Vec::new()).push(UnfinalizedMethod{ops:ops.into(),method_id}),
+        match crate::executor::baseir::into_base(&ops, self) {
+            Ok(baseir) => {
+                self.code_container.methods[method_id] = Some(Method::BaseIR { ops: baseir })
+            }
+            Err(err) => self
+                .code_container
+                .unfinalized_methods
+                .entry(err.dependency().into())
+                .or_insert(Vec::new())
+                .push(UnfinalizedMethod {
+                    ops: ops.into(),
+                    method_id,
+                }),
         }
     }
-    pub(crate) fn insert_class(&mut self, base_class: crate::executor::fatclass::FatClass)->Option<ClassRef> {
-        match crate::executor::class::finalize(&base_class, self){
-            Ok(final_class) =>Some(self.code_container.set_or_replace_class(base_class.class_name(), final_class)),
+    pub(crate) fn insert_class(
+        &mut self,
+        base_class: crate::executor::fatclass::FatClass,
+    ) -> Option<ClassRef> {
+        match crate::executor::class::finalize(&base_class, self) {
+            Ok(final_class) => Some(
+                self.code_container
+                    .set_or_replace_class(base_class.class_name(), final_class),
+            ),
             Err(err) => {
-                self.code_container.unfinalized_classes.entry(err.dependency().into()).or_insert(Vec::new()).push(base_class);
+                self.code_container
+                    .unfinalized_classes
+                    .entry(err.dependency().into())
+                    .or_insert(Vec::new())
+                    .push(base_class);
                 None
             }
         }
@@ -400,7 +473,11 @@ impl ExecEnv {
     pub(crate) fn lookup_method(&self, method_name: &str) -> Option<MethodRef> {
         self.code_container.method_names.get(method_name).copied()
     }
-    pub(crate) fn replace_method_with_extern<T:Invokable + 'static>(&mut self, methodref:MethodRef,extern_fn:T){
+    pub(crate) fn replace_method_with_extern<T: Invokable + 'static>(
+        &mut self,
+        methodref: MethodRef,
+        extern_fn: T,
+    ) {
         self.code_container.methods[methodref] = Some(Method::Invokable(Box::new(extern_fn)));
     }
     pub(crate) fn lookup_class(&self, class_name: &str) -> Option<usize> {
@@ -410,11 +487,11 @@ impl ExecEnv {
         let new_obj = self.code_container.classes[class].new();
         EnvMemory::new_obj(&mut self.env_mem as *mut _, new_obj)
     }
-    pub(crate) fn get_static_id(&mut self, class:ClassRef, name:&str)->Option<StaticRef>{
+    pub(crate) fn get_static_id(&mut self, class: ClassRef, name: &str) -> Option<StaticRef> {
         self.code_container.classes[class].get_static(name)
     }
-    pub(crate)fn set_static(&mut self, index: StaticRef, value: Value) {
-        EnvMemory::set_static(&mut self.env_mem as *mut _, index,value)
+    pub(crate) fn set_static(&mut self, index: StaticRef, value: Value) {
+        EnvMemory::set_static(&mut self.env_mem as *mut _, index, value)
     }
     pub fn call_method(
         &mut self,
@@ -437,8 +514,8 @@ impl ExecEnv {
     }
 }
 //trait SimpleARG{};
-impl <T: Fn()>Invokable for T{
-    fn call(&self, _: ExecCtx) -> Result<Value, ExecException>{
+impl<T: Fn()> Invokable for T {
+    fn call(&self, _: ExecCtx) -> Result<Value, ExecException> {
         Ok(Value::Void)
     }
 }
@@ -669,7 +746,7 @@ fn exec_hw() {
         ))
         .unwrap();
     exec_env.call_method(hw, &[]).unwrap();
-    panic!();
+    //panic!();
 }
 #[test]
 fn fields() {
@@ -734,7 +811,7 @@ fn gravity() {
             .call_method(tick, &[Value::ObjectRef(obj)])
             .unwrap();
     }
-    panic!();
+    //panic!();
 }
 #[test]
 fn extends() {
@@ -761,13 +838,11 @@ fn nbody() {
     let new_nbody = exec_env
         .lookup_method(&mangle_method_name("NBody", "NewNBody", "(I)LNBody;"))
         .unwrap();
-    let tick =  exec_env
+    let tick = exec_env
         .lookup_method(&mangle_method_name("NBody", "Tick", "()V"))
         .unwrap();
-    let nbody = exec_env
-        .call_method(new_nbody,&[Value::Int(10)]).unwrap();
-    exec_env
-        .call_method(tick,&[nbody]).unwrap();
+    let nbody = exec_env.call_method(new_nbody, &[Value::Int(10)]).unwrap();
+    exec_env.call_method(tick, &[nbody]).unwrap();
 }
 
 #[test]
@@ -776,10 +851,20 @@ fn load_jar() {
     let classes = importer::load_jar(&mut file).unwrap();
     let mut exec_env = ExecEnv::new();
     stdlib::insert_all(&mut exec_env);
-    for class in classes{
-        println!("class:{}",class.name());
+    let class_count = classes.len() as f64;
+    for (index, class) in classes.into_iter().enumerate() {
+        println!("Progress:{}%", (index as f64 / class_count) * 100.0);
+        println!("class:{}", class.name());
         exec_env.load_class(class);
     }
     exec_env.dep_status();
     panic!();
+}
+#[test]
+fn load_aa() {
+    let mut file = std::fs::File::open(
+        "target/testres/io/netty/channel/unix/DomainDatagramSocketAddress.class",
+    )
+    .unwrap();
+    let class = importer::load_class(&mut file).unwrap();
 }
