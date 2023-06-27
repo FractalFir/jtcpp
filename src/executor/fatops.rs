@@ -60,20 +60,26 @@ pub(crate) enum FatOp {
     FAdd,
     IAdd,
     LAdd,
+    DMul,
+    FMul,
     IMul,
     LMul,
-    FMul,
     ISub,
     DSub,
     FSub,
     LSub,
+    DRem,
+    FRem,
     IRem,
+    LRem,
     IShr,
     LShr,
     IShl,
     LShl,
-    IDiv,
+    DDiv,
     FDiv,
+    IDiv,
+    LDiv,
     IAnd,
     LAnd,
     IOr,
@@ -82,6 +88,8 @@ pub(crate) enum FatOp {
     LXOr,
     INeg,
     LNeg,
+    DNeg,
+    FNeg,
     LUShr,
     IUShr,
     InvokeSpecial(IString, u8),
@@ -128,6 +136,10 @@ pub(crate) enum FatOp {
     Dup,
     Dup2,
     DupX1,
+    Dup2X1,
+    DupX2,
+    Dup2X2,
+    Swap,
     Pop,
     Pop2,
     Return,
@@ -140,10 +152,20 @@ pub(crate) enum FatOp {
     D2F,
     I2L,
     L2I,
+    F2L,
+    L2F,
     I2F,
     F2I,
+    I2C,
+    I2S,
+    I2B,
+    I2D,
+    D2I,
+    D2L,
+    L2D,
     New(IString),
     ANewArray(IString),
+    MultiANewArray(IString, u8),
     BNewArray,
     CNewArray,
     DNewArray,
@@ -175,6 +197,8 @@ pub(crate) enum FatOp {
     LCmp,
     FCmpL,
     FCmpG,
+    DCmpL,
+    DCmpG,
     ArrayLength,
     IfACmpEq(usize),
     IfICmpGreater(usize),
@@ -222,6 +246,7 @@ pub(crate) fn expand_ops(ops: &[(OpCode, u16)], class: &ImportedJavaClass) -> Bo
                         FatOp::ClassConst(class_name.into())
                     }
                     crate::importer::ConstantItem::Float(float) => FatOp::FConst(*float),
+                    crate::importer::ConstantItem::Double(double) => FatOp::DConst(*double),
                     crate::importer::ConstantItem::Intiger(int) => FatOp::IConst(*int),
                     crate::importer::ConstantItem::Long(long) => FatOp::LConst(*long),
                     _ => todo!("can't handle const!{const_item:?}"),
@@ -232,25 +257,35 @@ pub(crate) fn expand_ops(ops: &[(OpCode, u16)], class: &ImportedJavaClass) -> Bo
             OpCode::SIPush(value) => FatOp::SConst(value),
             OpCode::IConst(int) => FatOp::IConst(int),
             OpCode::FConst(float) => FatOp::FConst(float),
+            OpCode::DConst(double) => FatOp::DConst(double),
             OpCode::LConst(long) => FatOp::LConst(long),
             OpCode::LCmp => FatOp::LCmp,
             OpCode::FCmpG => FatOp::FCmpG,
             OpCode::FCmpL => FatOp::FCmpL,
+            OpCode::DCmpL => FatOp::DCmpL,
+            OpCode::DCmpG => FatOp::DCmpG,
             OpCode::F2D => FatOp::F2D,
             OpCode::D2F => FatOp::D2F,
             OpCode::ISub => FatOp::ISub,
             OpCode::DSub => FatOp::DSub,
             OpCode::FSub => FatOp::FSub,
             OpCode::LSub => FatOp::LSub,
-            OpCode::IAdd => FatOp::IAdd,
+            OpCode::DAdd => FatOp::DAdd,
             OpCode::FAdd => FatOp::FAdd,
+            OpCode::IAdd => FatOp::IAdd,
             OpCode::LAdd => FatOp::LAdd,
+            OpCode::DMul => FatOp::DMul,
+            OpCode::FMul => FatOp::FMul,
             OpCode::IMul => FatOp::IMul,
             OpCode::LMul => FatOp::LMul,
-            OpCode::FMul => FatOp::FMul,
-            OpCode::IDiv => FatOp::IDiv,
+            OpCode::DDiv => FatOp::DDiv,
             OpCode::FDiv => FatOp::FDiv,
+            OpCode::IDiv => FatOp::IDiv,
+            OpCode::LDiv => FatOp::LDiv,
+            OpCode::DRem => FatOp::DRem,
+            OpCode::FRem => FatOp::FRem,
             OpCode::IRem => FatOp::IRem,
+            OpCode::LRem => FatOp::LRem,
             OpCode::IShr => FatOp::IShr,
             OpCode::LShr => FatOp::LShr,
             OpCode::IShl => FatOp::IShl,
@@ -264,11 +299,22 @@ pub(crate) fn expand_ops(ops: &[(OpCode, u16)], class: &ImportedJavaClass) -> Bo
             OpCode::IXOr => FatOp::IXOr,
             OpCode::LXOr => FatOp::LXOr,
             OpCode::INeg => FatOp::INeg,
-            OpCode::LNeg => FatOp::LNeg,
-            OpCode::I2L => FatOp::I2L,
+            OpCode::LNeg => FatOp::LNeg,   
+            OpCode::DNeg => FatOp::DNeg,
+            OpCode::FNeg => FatOp::FNeg,
             OpCode::L2I => FatOp::L2I,
-            OpCode::I2F => FatOp::I2F,
+            OpCode::L2F => FatOp::L2F,
             OpCode::F2I => FatOp::F2I,
+            OpCode::F2L => FatOp::F2L,
+            OpCode::I2B => FatOp::I2B,
+            OpCode::I2C => FatOp::I2C,
+            OpCode::I2F => FatOp::I2F,
+            OpCode::I2D => FatOp::I2D,
+            OpCode::I2S => FatOp::I2S,
+            OpCode::I2L => FatOp::I2L,
+            OpCode::D2I => FatOp::D2I,
+            OpCode::D2L => FatOp::D2L,
+            OpCode::L2D => FatOp::L2D,
             OpCode::ALoad(index) => FatOp::ALoad(index),
             OpCode::ILoad(index) => FatOp::ILoad(index),
             OpCode::LLoad(index) => FatOp::LLoad(index),
@@ -278,6 +324,7 @@ pub(crate) fn expand_ops(ops: &[(OpCode, u16)], class: &ImportedJavaClass) -> Bo
             OpCode::IStore(index) => FatOp::IStore(index),
             OpCode::LStore(index) => FatOp::LStore(index),
             OpCode::FLoad(index) => FatOp::FLoad(index),
+            OpCode::DLoad(index) => FatOp::DLoad(index),
             OpCode::GetStatic(index) => {
                 let (ftype, class, name) = fieldref_to_info(index, class);
                 match ftype {
@@ -410,19 +457,21 @@ pub(crate) fn expand_ops(ops: &[(OpCode, u16)], class: &ImportedJavaClass) -> Bo
                 let class_name = class.lookup_class(index).unwrap();
                 FatOp::ANewArray(class_name.into())
             }
-            OpCode::NewArray(typeid)=>{
-                match typeid{
-                    4=>FatOp::ZNewArray,
-                    5=>FatOp::CNewArray,
-                    6=>FatOp::FNewArray,
-                    7=>FatOp::DNewArray,
-                    8=>FatOp::BNewArray,
-                    9=>FatOp::SNewArray,
-                    10=>FatOp::INewArray,
-                    11=>FatOp::LNewArray,
-                    0..=3 | 11.. => panic!("Invalid type ID in NewArray Op!"),
-                }
+            OpCode::MultiANewArray(index,dimensions) => {
+                let class_name = class.lookup_class(index).unwrap();
+                FatOp::MultiANewArray(class_name.into(),dimensions)
             }
+            OpCode::NewArray(typeid) => match typeid {
+                4 => FatOp::ZNewArray,
+                5 => FatOp::CNewArray,
+                6 => FatOp::FNewArray,
+                7 => FatOp::DNewArray,
+                8 => FatOp::BNewArray,
+                9 => FatOp::SNewArray,
+                10 => FatOp::INewArray,
+                11 => FatOp::LNewArray,
+                0..=3 | 11.. => panic!("Invalid type ID in NewArray Op!"),
+            },
             OpCode::CheckCast(index) => {
                 let class_name = class.lookup_class(index).unwrap();
                 FatOp::CheckedCast(class_name.into())
@@ -431,8 +480,13 @@ pub(crate) fn expand_ops(ops: &[(OpCode, u16)], class: &ImportedJavaClass) -> Bo
                 let class_name = class.lookup_class(index).unwrap();
                 FatOp::InstanceOf(class_name.into())
             }
+            OpCode::Swap => FatOp::Swap,
             OpCode::Dup => FatOp::Dup,
+            OpCode::Dup2 => FatOp::Dup2,
             OpCode::DupX1 => FatOp::DupX1,
+            OpCode::Dup2X1 => FatOp::Dup2X1,
+            OpCode::DupX2 => FatOp::DupX2,
+            OpCode::Dup2X2 => FatOp::Dup2X2,
             OpCode::Pop => FatOp::Pop,
             OpCode::Pop2 => FatOp::Pop2,
             ///TODO: handle non-static methods(change argc by 1)
@@ -458,12 +512,12 @@ pub(crate) fn expand_ops(ops: &[(OpCode, u16)], class: &ImportedJavaClass) -> Bo
                 FatOp::InvokeInterface(name, argc + 1)
             }
             OpCode::InvokeDynamic(index) => {
-                let (bootstrap_method_attr_index, name_and_type_index) =
+                let (bootstrap_method_attr_index, _name_and_type_index) =
                     class.lookup_invoke_dynamic(index).unwrap();
                 let bootstrap_method = class
                     .lookup_bootstrap_method(bootstrap_method_attr_index)
                     .unwrap();
-                let (reference_kind, reference_index) = class
+                let (_reference_kind, _reference_index) = class
                     .lookup_method_handle(bootstrap_method.bootstrap_method_ref)
                     .unwrap();
                 //println!("reference_kind:{reference_kind},reference_index:{reference_index}");

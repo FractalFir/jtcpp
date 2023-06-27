@@ -3,12 +3,13 @@ use super::UnmetDependency;
 use crate::executor::fatops::FatOp;
 use crate::ClassRef;
 use crate::ExecEnv;
-use crate::{CodeContainer, EnvMemory, ExecException, Value};
+use crate::{ExecException, Value};
 #[derive(Debug)]
 pub(crate) enum BaseIR {
     Dup,
     DupX1,
     Pop,
+    Swap,
     AConst(usize),
     DConst(f64),
     FConst(f32),
@@ -37,12 +38,24 @@ pub(crate) enum BaseIR {
     IMul,
     LMul,
     FMul,
+    DMul,
+    DRem,
+    FRem,
     IRem,
-    IDiv,
+    LRem,
+    DDiv,
     FDiv,
+    IDiv,
+    LDiv,
     INeg,
     LNeg,
+    DNeg,
+    FNeg,
     LCmp,
+    DCmpL,
+    DCmpG,
+    FCmpL,
+    FCmpG,
     IOr,
     LOr,
     IXOr,
@@ -101,13 +114,31 @@ pub(crate) enum BaseIR {
     F2D,
     D2F,
     I2L,
+    F2L,
     L2I,
     I2F,
+    L2F,
     F2I,
+    I2B,
+    I2C,
+    I2S,
+    I2D,
+    D2I,
+    D2L,
+    L2D,
     New(ClassRef),
     CheckedCast(ClassRef),
     InstanceOf(ClassRef),
     ANewArray(ClassRef),
+    MultiANewArray(ClassRef,u8),
+    MultiBNewArray(u8),
+    MultiCNewArray(u8),
+    MultiDNewArray(u8),
+    MultiFNewArray(u8),
+    MultiINewArray(u8),
+    MultiLNewArray(u8),
+    MultiSNewArray(u8),
+    MultiZNewArray(u8),
     BNewArray,
     CNewArray,
     DNewArray,
@@ -127,6 +158,7 @@ pub(crate) enum BaseIR {
     IfNull(usize),
     IfNotNull(usize),
     IfACmpNe(usize),
+    IfACmpEq(usize),
     IfZero(usize),
     IfICmpGreater(usize),
     IfGreterZero(usize),
@@ -167,14 +199,12 @@ fn lookup_static(
     } else {
         return Err(UnmetDependency::NeedsClass(class_name.into()));
     };
-    if let Some(static_id) = exec_env.code_container.classes[class_id]
-        .get_static(field_name){
-            Ok(static_id)
+    if let Some(static_id) = exec_env.code_container.classes[class_id].get_static(field_name) {
+        Ok(static_id)
+    } else {
+        println!("{class_name} does not have static field {field_name}! Skipping this method to try and run anyway!");
+        Err(UnmetDependency::MissingField(class_name.into(),field_name.into()))
     }
-    else{
-        panic!("{class_name} does not have static field {field_name}!");
-    }
-    
 }
 fn lookup_field(
     class_name: &str,
@@ -205,6 +235,8 @@ pub(crate) fn into_base(
         let newop = match op {
             FatOp::AConstNull => BaseIR::AConst(0),
             FatOp::BConst(byte) => BaseIR::IConst(*byte as i32),
+            FatOp::DConst(double) => BaseIR::DConst(*double as f64),
+            FatOp::FConst(float) => BaseIR::FConst(*float as f32),
             FatOp::SConst(short) => BaseIR::IConst(*short as i32),
             FatOp::LConst(long) => BaseIR::LConst(*long as i64),
             FatOp::IInc(local, change) => BaseIR::IInc(*local, *change),
@@ -222,6 +254,7 @@ pub(crate) fn into_base(
             FatOp::IfICmpGreater(index) => BaseIR::IfICmpGreater(*index),
             FatOp::IfICmpLessEqual(index) => BaseIR::IfICmpLessEqual(*index),
             FatOp::IfGreterZero(index) => BaseIR::IfGreterZero(*index),
+            FatOp::IfACmpEq(index) => BaseIR::IfACmpEq(*index),
             FatOp::GoTo(index) => BaseIR::GoTo(*index),
             FatOp::FConst(float) => BaseIR::FConst(*float),
             FatOp::IConst(int) => BaseIR::IConst(*int),
@@ -237,23 +270,44 @@ pub(crate) fn into_base(
             FatOp::LAdd => BaseIR::LAdd,
             FatOp::IMul => BaseIR::IMul,
             FatOp::LMul => BaseIR::LMul,
+            FatOp::DMul => BaseIR::DMul,
             FatOp::FMul => BaseIR::FMul,
-            FatOp::IDiv => BaseIR::IDiv,
+            FatOp::DDiv => BaseIR::DDiv,
             FatOp::FDiv => BaseIR::FDiv,
+            FatOp::IDiv => BaseIR::IDiv,
+            FatOp::LDiv => BaseIR::LDiv,
             FatOp::IRem => BaseIR::IRem,
+            FatOp::LRem => BaseIR::LRem,
+            FatOp::DRem => BaseIR::DRem,
+            FatOp::FRem => BaseIR::FRem,
             FatOp::INeg => BaseIR::INeg,
             FatOp::LNeg => BaseIR::LNeg,
+            FatOp::DNeg => BaseIR::DNeg,
+            FatOp::FNeg => BaseIR::FNeg,
             FatOp::IShr => BaseIR::IShr,
             FatOp::IShl => BaseIR::IShl,
             FatOp::LShr => BaseIR::LShr,
             FatOp::LShl => BaseIR::LShl,
             FatOp::F2D => BaseIR::F2D,
             FatOp::D2F => BaseIR::D2F,
-            FatOp::I2L => BaseIR::I2L,
             FatOp::L2I => BaseIR::L2I,
+            FatOp::F2L => BaseIR::F2L,
             FatOp::I2F => BaseIR::I2F,
             FatOp::F2I => BaseIR::F2I,
+            FatOp::I2B => BaseIR::I2B,
+            FatOp::I2C => BaseIR::I2C,
+            FatOp::I2D => BaseIR::I2D,
+            FatOp::L2F => BaseIR::L2F,
+            FatOp::I2S => BaseIR::I2S,
+            FatOp::I2L => BaseIR::I2L,
+            FatOp::D2I => BaseIR::D2I,
+            FatOp::D2L => BaseIR::D2L,
+            FatOp::L2D => BaseIR::L2D,
             FatOp::LCmp => BaseIR::LCmp,
+            FatOp::DCmpL => BaseIR::DCmpL,
+            FatOp::DCmpG => BaseIR::DCmpG,
+            FatOp::FCmpL => BaseIR::FCmpL,
+            FatOp::FCmpG => BaseIR::FCmpG,
             FatOp::IOr => BaseIR::IOr,
             FatOp::LOr => BaseIR::LOr,
             FatOp::IXOr => BaseIR::IXOr,
@@ -268,6 +322,7 @@ pub(crate) fn into_base(
             FatOp::IStore(index) => BaseIR::IStore(*index),
             FatOp::LStore(index) => BaseIR::LStore(*index),
             FatOp::FLoad(index) => BaseIR::FLoad(*index),
+            FatOp::DLoad(index) => BaseIR::DLoad(*index),
             FatOp::LLoad(index) => BaseIR::LLoad(*index),
             FatOp::InvokeSpecial(mangled, args) => {
                 let method_id = exec_env.code_container.lookup_or_insert_method(&mangled);
@@ -298,6 +353,10 @@ pub(crate) fn into_base(
                 let field_id = lookup_field(class_name, field_name, exec_env)?;
                 BaseIR::BGetField(field_id)
             }
+            FatOp::CGetField(class_name, field_name) => {
+                let field_id = lookup_field(class_name, field_name, exec_env)?;
+                BaseIR::CGetField(field_id)
+            }
             FatOp::DGetField(class_name, field_name) => {
                 let field_id = lookup_field(class_name, field_name, exec_env)?;
                 BaseIR::DGetField(field_id)
@@ -309,6 +368,10 @@ pub(crate) fn into_base(
             FatOp::IGetField(class_name, field_name) => {
                 let field_id = lookup_field(class_name, field_name, exec_env)?;
                 BaseIR::IGetField(field_id)
+            }
+            FatOp::SGetField(class_name, field_name) => {
+                let field_id = lookup_field(class_name, field_name, exec_env)?;
+                BaseIR::SGetField(field_id)
             }
             FatOp::LGetField(class_name, field_name) => {
                 let field_id = lookup_field(class_name, field_name, exec_env)?;
@@ -325,6 +388,10 @@ pub(crate) fn into_base(
             FatOp::BPutField(class_name, field_name) => {
                 let field_id = lookup_field(class_name, field_name, exec_env)?;
                 BaseIR::BPutField(field_id)
+            }
+            FatOp::CPutField(class_name, field_name) => {
+                let field_id = lookup_field(class_name, field_name, exec_env)?;
+                BaseIR::CPutField(field_id)
             }
             FatOp::DPutField(class_name, field_name) => {
                 let field_id = lookup_field(class_name, field_name, exec_env)?;
@@ -346,21 +413,45 @@ pub(crate) fn into_base(
                 let field_id = lookup_field(class_name, field_name, exec_env)?;
                 BaseIR::LPutField(field_id)
             }
+            FatOp::SPutField(class_name, field_name) => {
+                let field_id = lookup_field(class_name, field_name, exec_env)?;
+                BaseIR::SPutField(field_id)
+            }
             FatOp::ZPutField(class_name, field_name) => {
                 let field_id = lookup_field(class_name, field_name, exec_env)?;
                 BaseIR::ZPutField(field_id)
-            }
-            FatOp::IGetStatic(class_name, field_name) => {
-                let static_id = lookup_static(class_name, field_name, exec_env)?;
-                BaseIR::IGetStatic(static_id)
             }
             FatOp::AGetStatic(class_name, field_name) => {
                 let static_id = lookup_static(class_name, field_name, exec_env)?;
                 BaseIR::AGetStatic(static_id)
             }
+            FatOp::BGetStatic(class_name, field_name) => {
+                let static_id = lookup_static(class_name, field_name, exec_env)?;
+                BaseIR::BGetStatic(static_id)
+            }
+            FatOp::CGetStatic(class_name, field_name) => {
+                let static_id = lookup_static(class_name, field_name, exec_env)?;
+                BaseIR::CGetStatic(static_id)
+            }
+            FatOp::DGetStatic(class_name, field_name) => {
+                let static_id = lookup_static(class_name, field_name, exec_env)?;
+                BaseIR::DGetStatic(static_id)
+            }
+            FatOp::FGetStatic(class_name, field_name) => {
+                let static_id = lookup_static(class_name, field_name, exec_env)?;
+                BaseIR::FGetStatic(static_id)
+            }
+            FatOp::IGetStatic(class_name, field_name) => {
+                let static_id = lookup_static(class_name, field_name, exec_env)?;
+                BaseIR::IGetStatic(static_id)
+            }
             FatOp::LGetStatic(class_name, field_name) => {
                 let static_id = lookup_static(class_name, field_name, exec_env)?;
                 BaseIR::LGetStatic(static_id)
+            }
+            FatOp::SGetStatic(class_name, field_name) => {
+                let static_id = lookup_static(class_name, field_name, exec_env)?;
+                BaseIR::SGetStatic(static_id)
             }
             FatOp::ZGetStatic(class_name, field_name) => {
                 let static_id = lookup_static(class_name, field_name, exec_env)?;
@@ -369,6 +460,22 @@ pub(crate) fn into_base(
             FatOp::APutStatic(class_name, field_name) => {
                 let static_id = lookup_static(class_name, field_name, exec_env)?;
                 BaseIR::APutStatic(static_id)
+            }
+            FatOp::BPutStatic(class_name, field_name) => {
+                let static_id = lookup_static(class_name, field_name, exec_env)?;
+                BaseIR::BPutStatic(static_id)
+            }
+            FatOp::CPutStatic(class_name, field_name) => {
+                let static_id = lookup_static(class_name, field_name, exec_env)?;
+                BaseIR::CPutStatic(static_id)
+            }
+            FatOp::DPutStatic(class_name, field_name) => {
+                let static_id = lookup_static(class_name, field_name, exec_env)?;
+                BaseIR::DPutStatic(static_id)
+            }
+            FatOp::FPutStatic(class_name, field_name) => {
+                let static_id = lookup_static(class_name, field_name, exec_env)?;
+                BaseIR::FPutStatic(static_id)
             }
             FatOp::IPutStatic(class_name, field_name) => {
                 let static_id = lookup_static(class_name, field_name, exec_env)?;
@@ -381,6 +488,31 @@ pub(crate) fn into_base(
             FatOp::ZPutStatic(class_name, field_name) => {
                 let static_id = lookup_static(class_name, field_name, exec_env)?;
                 BaseIR::ZPutStatic(static_id)
+            }
+            FatOp::MultiANewArray(type_name,dimensions) => {
+                use super::FieldType;
+                use crate::executor::field_desc_str_to_ftype;
+                let ftype = field_desc_str_to_ftype(type_name,*dimensions as usize);
+                match ftype{
+                    FieldType::ObjectRef => {
+                        let class_name = &type_name[(*dimensions as usize + 1)..(type_name.len() - 1)];
+                        let class_id = exec_env.code_container.lookup_class(class_name);
+                        let class_id = if let Some(class_id) = class_id {
+                            class_id
+                        } else {
+                            return Err(UnmetDependency::NeedsClass(class_name.into()));
+                        };
+                        BaseIR::MultiANewArray(class_id,*dimensions)
+                    },
+                    FieldType::Byte => BaseIR::MultiBNewArray(*dimensions),
+                    FieldType::Char => BaseIR::MultiCNewArray(*dimensions),
+                    FieldType::Double => BaseIR::MultiDNewArray(*dimensions),
+                    FieldType::Float => BaseIR::MultiFNewArray(*dimensions),
+                    FieldType::Int => BaseIR::MultiINewArray(*dimensions),
+                    FieldType::Short => BaseIR::MultiSNewArray(*dimensions),
+                    FieldType::Long => BaseIR::MultiLNewArray(*dimensions),
+                    _=> todo!("unhandled multi array type {ftype:?}"),
+                }
             }
             FatOp::New(class_name) => {
                 let class_id = exec_env.code_container.lookup_class(class_name);
@@ -425,6 +557,7 @@ pub(crate) fn into_base(
             FatOp::INewArray => BaseIR::INewArray,
             FatOp::LNewArray => BaseIR::LNewArray,
             FatOp::SNewArray => BaseIR::SNewArray,
+            FatOp::ZNewArray => BaseIR::ZNewArray,
             FatOp::StringConst(string) => BaseIR::AConst(exec_env.const_string(string)),
             FatOp::ClassConst(class_name) => {
                 let class_id = exec_env.code_container.lookup_class(class_name);
@@ -441,6 +574,7 @@ pub(crate) fn into_base(
             FatOp::DReturn => BaseIR::DReturn,
             FatOp::FReturn => BaseIR::FReturn,
             FatOp::LReturn => BaseIR::LReturn,
+            FatOp::Swap => BaseIR::Swap,
             FatOp::Dup => BaseIR::Dup,
             FatOp::DupX1 => BaseIR::DupX1,
             FatOp::Pop => BaseIR::Pop,
@@ -471,6 +605,10 @@ pub(crate) fn into_base(
             FatOp::InvokeInterface(_, _) => BaseIR::Invalid,
             // Funky behaviour with doubles and longs.
             FatOp::Pop2 => BaseIR::Invalid,
+            FatOp::Dup2 => BaseIR::Invalid,
+            FatOp::DupX2 => BaseIR::Invalid,
+            FatOp::Dup2X2 => BaseIR::Invalid,
+            FatOp::Dup2X1 => BaseIR::Invalid,
             _ => todo!("Can't convert op {op:?} to base IR"),
         };
         //println!("Op:{op:?} new_op:{newop:?}");

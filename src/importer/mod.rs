@@ -95,11 +95,11 @@ impl Method {
     pub(crate) fn max_locals(&self) -> Option<u16> {
         for attribute in self.attributes.iter() {
             if let Attribute::Code {
-                ops,
-                max_stack,
+                ops: _,
+                max_stack: _,
                 max_locals,
-                attributes,
-                exceptions,
+                attributes: _,
+                exceptions: _,
             } = attribute
             {
                 return Some(*max_locals);
@@ -111,10 +111,10 @@ impl Method {
         for attribute in self.attributes.iter() {
             if let Attribute::Code {
                 ops,
-                max_stack,
-                max_locals,
-                attributes,
-                exceptions,
+                max_stack: _,
+                max_locals: _,
+                attributes: _,
+                exceptions: _,
             } = attribute
             {
                 return Some(ops);
@@ -149,9 +149,13 @@ pub(crate) struct ImportedJavaClass {
     super_class: u16,
     fields: Box<[Field]>,
     methods: Box<[Method]>,
+    interfaces: Box<[u16]>,
     attributes: Box<[Attribute]>, //field_names: Box<[IString]>,
 }
 impl ImportedJavaClass {
+    pub(crate) fn interfaces(&self)->&[u16]{
+        &self.interfaces
+    }
     pub(crate) fn lookup_invoke_dynamic(&self, dynamic: u16) -> Option<(u16, u16)> {
         let dynamic = &self.const_items[dynamic as usize - 1];
         if let ConstantItem::InvokeDynamic {
@@ -525,7 +529,7 @@ pub(crate) fn load_class<R: std::io::Read>(
             const_items.push(ConstantItem::Padding);
         }
     }
-    let access_flags = AccessFlags::read(src)?;
+    let _access_flags = AccessFlags::read(src)?;
     //println!("access_flags:{access_flags:?}");
     let this_class = load_u16(src)?;
     //println!("this_class:{this_class}");
@@ -561,6 +565,7 @@ pub(crate) fn load_class<R: std::io::Read>(
         attributes: attributes.into(),
         fields: fields.into(),
         methods: methods.into(),
+        interfaces: interfaces.into(),
         const_items: const_items.into(),
         this_class,
         super_class,

@@ -9,11 +9,13 @@ use core::ptr::NonNull;
 #[derive(Debug)]
 pub(crate) enum UnmetDependency {
     NeedsClass(IString),
+    MissingField(IString,IString),
 }
 impl UnmetDependency {
     pub(crate) fn dependency(&self) -> &str {
         match self {
             Self::NeedsClass(class) => class,
+            Self::MissingField(class,_fname) => class,
         }
     }
 }
@@ -34,17 +36,19 @@ impl FieldType {
         match self {
             Self::Int => Value::Int(0),
             Self::Float => Value::Float(0.0),
+            Self::Double => Value::Double(0.0),
             Self::ObjectRef => Value::ObjectRef(0),
             Self::Bool => Value::Bool(false),
             Self::Long => Value::Long(0),
             Self::Char => Value::Char(0),
+            Self::Byte => Value::Byte(0),
+            Self::Short => Value::Short(0),
             _ => todo!("Can't create default value of type {self:?}"),
         }
     }
 }
-pub(crate) fn field_descriptor_to_ftype(descriptor: u16, class: &ImportedJavaClass) -> FieldType {
-    let descriptor = class.lookup_utf8(descriptor).unwrap();
-    match descriptor.chars().nth(0).unwrap() {
+pub(crate) fn field_desc_str_to_ftype(desc_str:&str,th:usize)  -> FieldType {
+    match desc_str.chars().nth(th).unwrap() {
         'B' => FieldType::Byte,
         'C' => FieldType::Char,
         'D' => FieldType::Double,
@@ -54,8 +58,12 @@ pub(crate) fn field_descriptor_to_ftype(descriptor: u16, class: &ImportedJavaCla
         'L' | '[' => FieldType::ObjectRef,
         'S' => FieldType::Short,
         'Z' => FieldType::Bool,
-        _ => panic!("Invalid field descriptor!\"{descriptor}\""),
+        _ => panic!("Invalid field descriptor!\"{desc_str}\""),
     }
+}
+pub(crate) fn field_descriptor_to_ftype(descriptor: u16, class: &ImportedJavaClass) -> FieldType {
+    let descriptor = class.lookup_utf8(descriptor).unwrap();
+    field_desc_str_to_ftype(descriptor,0)
 }
 use crate::{CodeContainer, EnvMemory, ExecException};
 use core::cell::UnsafeCell;

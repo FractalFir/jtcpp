@@ -1,21 +1,28 @@
 use super::{field_descriptor_to_ftype, FieldType};
 use crate::importer::ImportedJavaClass;
-use crate::HashMap;
+
 use crate::IString;
 pub(crate) struct FatClass {
     virtuals: Vec<(IString, IString)>,
     class_name: IString,
     super_name: IString,
+    interfaces: Vec<IString>,
     fields: Vec<(IString, FieldType)>,
     static_fields: Vec<(IString, FieldType)>,
 }
 impl FatClass {
+    pub(crate) fn interfaces(&self) -> &[IString]{
+        &self.interfaces
+    }
     pub(crate) fn add_virtual(&mut self, virtual_partialy_mangled: &str, method_mangled: &str) {
         self.virtuals
             .push((virtual_partialy_mangled.into(), method_mangled.into()));
     }
     pub(crate) fn add_static(&mut self, name: &str, ftype: FieldType) {
         self.static_fields.push((name.into(), ftype.clone()));
+    }
+    pub(crate) fn add_field(&mut self, name: &str, ftype: FieldType) {
+        self.fields.push((name.into(), ftype.clone()));
     }
     pub(crate) fn new(class_name: &str, super_name: &str) -> Self {
         Self {
@@ -24,6 +31,7 @@ impl FatClass {
             fields: Vec::new(),
             virtuals: Vec::new(),
             static_fields: Vec::new(),
+            interfaces:Vec::new(),
         }
     }
     pub(crate) fn class_name(&self) -> &str {
@@ -59,6 +67,14 @@ pub(crate) fn expand_class(class: &ImportedJavaClass) -> FatClass {
             virtuals.push((virtual_name, real_name));
         }
     }
+    let mut interfaces:Vec<IString> = Vec::with_capacity(class.interfaces().len());
+    //println!("interfaces beg");
+    for interface in class.interfaces(){
+        let iface_class = class.lookup_class(*interface).unwrap();
+        interfaces.push(iface_class.into());
+        //println!("interface:{interface} iface_class:{iface_class}");
+    }
+    //println!("interfaces end");
     for field in class.fields() {
         let (name_index, descriptor_index) = (field.name_index, field.descriptor_index);
         let name = class.lookup_utf8(name_index).unwrap();
@@ -75,6 +91,7 @@ pub(crate) fn expand_class(class: &ImportedJavaClass) -> FatClass {
         super_name,
         fields,
         virtuals,
+        interfaces,
         static_fields,
     }
 }

@@ -1,5 +1,5 @@
 use super::opcodes::{load_ops, OpCode};
-use super::{load_i16, load_i8, load_u16, load_u32, load_u64, load_u8, AccessFlags, ConstantItem};
+use super::{load_u16, load_u32, load_u8, AccessFlags, ConstantItem};
 #[derive(Debug)]
 pub(crate) struct LocalVariable {
     start_pc: u16,
@@ -238,7 +238,7 @@ impl Attribute {
             "RuntimeInvisibleParameterAnnotations" => Ok(Self::Unknown), //TODO: Not needed, but might be needed in the future.
             "RuntimeInvisibleAnnotations" => Ok(Self::Unknown), //TODO: Not needed, but might be needed in the future.
             _ => {
-                if attribute_name.len() < 8 || attribute_name.contains(".java"){
+                if attribute_name.len() < 8 || attribute_name.contains(".java") {
                     return Err(std::io::Error::new(
                         std::io::ErrorKind::Other,
                         format!("Nonsense attribute \"{attribute_name}\""),

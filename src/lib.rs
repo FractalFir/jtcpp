@@ -1,5 +1,5 @@
 pub(crate) type IString = Box<str>;
-use crate::importer::opcodes::OpCode;
+
 use std::collections::HashMap;
 mod executor;
 mod importer;
@@ -12,6 +12,15 @@ use crate::executor::baseir::BaseIR;
 use crate::executor::fatclass::FatClass;
 use executor::class::Class;
 use executor::ExecCtx;
+#[macro_export]
+macro_rules! add_virtual{
+    ($class:ident,$vmangled:literal,$class_path:literal)=>{
+        $class.add_virtual(
+            $vmangled,
+            concat!($class_path,"::",$vmangled),
+        );
+    }
+}
 enum Method {
     BaseIR { ops: Box<[BaseIR]> },
     Invokable(Box<dyn Invokable>),
@@ -30,10 +39,13 @@ impl Method {
 #[derive(Clone, Copy, Debug, PartialEq)]
 enum Value {
     Void,
+    Byte(i8),
+    Short(i16),
     Int(i32),
     Long(i64),
     ObjectRef(ObjectRef),
     Float(f32),
+    Double(f64),
     Bool(bool),
     Char(u16), //Java chars are utf-16
 }
@@ -141,7 +153,7 @@ impl EnvMemory {
         unsafe { (*this).objects.len() - 1 }
     }
     fn new_array(this: *mut Self, default_value: Value, length: usize) -> ObjectRef {
-        let mut new_array = Object::Array {
+        let new_array = Object::Array {
             //element_class_id:
             values: vec![default_value; length].into(),
         };
@@ -316,23 +328,68 @@ fn mangle_method_name_partial(method: &str, desc: &str) -> IString {
     format!("{method}{desc}").into_boxed_str()
 }
 impl ExecEnv {
-    fn get_class_virtual_methods(&self, class_id:ClassRef)->Option<Box<[usize]>>{
-        Some(self.code_container.classes.get(class_id)?.virtual_methods().into())
+    fn get_class_virtual_methods(&self, class_id: ClassRef) -> Option<Box<[usize]>> {
+        Some(
+            self.code_container
+                .classes
+                .get(class_id)?
+                .virtual_methods()
+                .into(),
+        )
     }
-    fn get_class_virtual_map(&self, class_id:ClassRef)->Option<HashMap<IString, usize>>{
-        Some(self.code_container.classes.get(class_id)?.virtual_map().clone())
+    fn get_class_virtual_map(&self, class_id: ClassRef) -> Option<HashMap<IString, usize>> {
+        Some(
+            self.code_container
+                .classes
+                .get(class_id)?
+                .virtual_map()
+                .clone(),
+        )
     }
-    fn get_class_field_types(&self, class_id:ClassRef)->Option<Box<[crate::executor::FieldType]>>{
-        Some(self.code_container.classes.get(class_id)?.field_types().into())
+    fn get_class_statics_map(&self, class_id: ClassRef) -> Option<HashMap<IString, usize>> {
+        Some(
+            self.code_container
+                .classes
+                .get(class_id)?
+                .statics_map()
+                .clone(),
+        )
     }
-    fn get_class_field_map(&self, class_id:ClassRef)->Option<HashMap<IString, usize>>{
-        Some(self.code_container.classes.get(class_id)?.field_map().clone())
+    fn get_class_field_types(
+        &self,
+        class_id: ClassRef,
+    ) -> Option<Box<[crate::executor::FieldType]>> {
+        Some(
+            self.code_container
+                .classes
+                .get(class_id)?
+                .field_types()
+                .into(),
+        )
+    }
+    fn get_class_field_map(&self, class_id: ClassRef) -> Option<HashMap<IString, usize>> {
+        Some(
+            self.code_container
+                .classes
+                .get(class_id)?
+                .field_map()
+                .clone(),
+        )
     }
     fn dep_status(&self) {
-        println!(
-            "unfinalized classes:{}, unfinalized methods{}",
-            self.code_container.unfinalized_classes.len(),
-            self.code_container.unfinalized_methods.len()
+        let uclasses = self.code_container.unfinalized_classes.len();
+        let fclasses = self.code_container.classes.len();
+        println!("Class finalization status {}%, Finalized: {}, Unfinalized: {}",
+            (fclasses as f64)/((uclasses + fclasses) as f64)*100.0,
+            fclasses,
+            uclasses,
+        );
+        let umethods = self.code_container.unfinalized_methods.len();
+        let fmethods = self.code_container.methods.len();
+        println!("Method finalization status {}%, Finalized: {}, Unfinalized: {}",
+            (fmethods as f64)/((umethods + fmethods) as f64)*100.0,
+            fmethods,
+            umethods,
         );
     }
     fn const_string(&mut self, string: &str) -> ObjectRef {
@@ -362,6 +419,7 @@ impl ExecEnv {
             })
     }
     pub fn new() -> Self {
+        use crate::executor::FieldType;
         let env_mem = EnvMemory::new();
         let code_container = CodeContainer::new();
         //let objects = vec!
@@ -371,22 +429,14 @@ impl ExecEnv {
         };
         //let obj_class = res.lookup_class("java/lang/Object").unwrap();
         let mut object_class = FatClass::new("java/lang/Object", "java/lang/Object");
-        object_class.add_virtual(
-            "getClass()Ljava/lang/Class;",
-            "java/lang/Object::getClass()Ljava/lang/Class;",
-        );
-        object_class.add_virtual(
-            "equals(Ljava/lang/Object;)Z",
-            "java/lang/Object::equals(Ljava/lang/Object;)Z"
-        );
-        object_class.add_virtual(
-            "hashCode()I",
-            "java/lang/Object::hashCode()I"
-        );
-        object_class.add_virtual(
-            "toString()Ljava/lang/String;",
-            "java/lang/Object::toString()Ljava/lang/String;"
-        );
+        add_virtual!(object_class,"getClass()Ljava/lang/Class;","java/lang/Object");
+        add_virtual!(object_class,"equals(Ljava/lang/Object;)Z","java/lang/Object");
+        add_virtual!(object_class,"hashCode()I","java/lang/Object");
+        add_virtual!(object_class,"toString()Ljava/lang/String;","java/lang/Object");
+        add_virtual!(object_class,"wait()V","java/lang/Object");
+        add_virtual!(object_class,"wait(JI)V","java/lang/Object");
+        add_virtual!(object_class,"notifyAll()V","java/lang/Object");
+        add_virtual!(object_class,"clone()Ljava/lang/Object;","java/lang/Object");
         let final_object_class = crate::executor::class::finalize(&object_class, &mut res).unwrap();
         let obj_class = res
             .code_container
@@ -398,55 +448,91 @@ impl ExecEnv {
             .lookup_or_insert_method("java/lang/Object::<init>()V");
         res.replace_method_with_extern(obj_init, || {});
         let mut string = FatClass::new("java/lang/String", "java/lang/Object");
-        string.add_virtual(
-            "split(Ljava/lang/String;)[Ljava/lang/String;",
-            "java/lang/String::split(Ljava/lang/String;)[Ljava/lang/String;",
-        );
-        string.add_virtual(
-            "startsWith(Ljava/lang/String;)Z",
-            "java/lang/String::startsWith(Ljava/lang/String;)Z",
-        );
-        string.add_virtual(
-            "length()I",
-            "java/lang/String::length()I",
-        );
-        string.add_virtual(
-            "regionMatches(ILjava/lang/String;II)Z",
-            "java/lang/String::regionMatches(ILjava/lang/String;II)Z",
-        );
-        string.add_virtual(
-            "charAt(I)C",
-            "java/lang/String::charAt(I)C",
-        );
-        string.add_virtual("isEmpty()Z", "java/lang/String::isEmpty()Z");
+        add_virtual!(string,"split(Ljava/lang/String;)[Ljava/lang/String;","java/lang/String");
+        add_virtual!(string,"startsWith(Ljava/lang/String;)Z","java/lang/String");
+        add_virtual!(string,"length()I","java/lang/String");
+        add_virtual!(string,"regionMatches(ILjava/lang/String;II)Z","java/lang/String");
+        add_virtual!(string,"charAt(I)C","java/lang/String");
+        add_virtual!(string,"isEmpty()Z","java/lang/String");
+        add_virtual!(string,"trim()Ljava/lang/String;","java/lang/String");
+        add_virtual!(string,"regionMatches(ZILjava/lang/String;II)Z","java/lang/String");
+        add_virtual!(string,"indexOf(II)I","java/lang/String");
+        add_virtual!(string,"indexOf(I)I","java/lang/String");
+        add_virtual!(string,"toLowerCase()Ljava/lang/String;","java/lang/String");
+        add_virtual!(string,"substring(I)Ljava/lang/String;","java/lang/String");
+        add_virtual!(string,"substring(II)Ljava/lang/String;","java/lang/String");
+        add_virtual!(string,"replace(CC)Ljava/lang/String;","java/lang/String");
+        add_virtual!(string,"getBytes(Ljava/nio/charset/Charset;)[B","java/lang/String");
+        add_virtual!(string,"getBytes()[B","java/lang/String");
+        add_virtual!(string,"getBytes(Ljava/lang/String;)[B","java/lang/String");
+        add_virtual!(string,"toCharArray()[C","java/lang/String");
+        add_virtual!(string,"equalsIgnoreCase(Ljava/lang/String;)Z","java/lang/String");
+        add_virtual!(string,"endsWith(Ljava/lang/String;)Z","java/lang/String");
+        add_virtual!(string,"getChars(II[CI)V","java/lang/String");
+        add_virtual!(string,"lastIndexOf(I)I","java/lang/String");
+        add_virtual!(string,"contains(Ljava/lang/CharSequence;)Z","java/lang/String");
+        add_virtual!(string,"indexOf(Ljava/lang/String;)I","java/lang/String");
+        add_virtual!(string,"lastIndexOf(Ljava/lang/String;)I","java/lang/String");
+        add_virtual!(string,"split(Ljava/lang/String;I)[Ljava/lang/String;","java/lang/String");
+        add_virtual!(string,"indexOf(Ljava/lang/String;I)I","java/lang/String");
+        add_virtual!(string,"lastIndexOf(II)I","java/lang/String");
+        add_virtual!(string,"lastIndexOf(Ljava/lang/String;I)I","java/lang/String");
+        add_virtual!(string,"replaceAll(Ljava/lang/String;Ljava/lang/String;)Ljava/lang/String;","java/lang/String");
+        add_virtual!(string,"replaceFirst(Ljava/lang/String;Ljava/lang/String;)Ljava/lang/String;","java/lang/String");
+        add_virtual!(string,"forEach(Ljava/util/function/Consumer;)V","java/lang/String");
+        add_virtual!(string,"compareTo(Ljava/lang/String;)I","java/lang/String");
+        add_virtual!(string,"compareToIgnoreCase(Ljava/lang/String;)I","java/lang/String");
+        add_virtual!(string,"toUpperCase()Ljava/lang/String;","java/lang/String");
+        add_virtual!(string,"concat(Ljava/lang/String;)Ljava/lang/String;","java/lang/String");
+        add_virtual!(string,"matches(Ljava/lang/String;)Z","java/lang/String");
+        add_virtual!(string,"codePoints()Ljava/util/stream/IntStream;","java/lang/String");
+        add_virtual!(string,"chars()Ljava/util/stream/IntStream;","java/lang/String");
+        add_virtual!(string,"startsWith(Ljava/lang/String;I)Z","java/lang/String");
+        add_virtual!(string,"replace(Ljava/lang/CharSequence;Ljava/lang/CharSequence;)Ljava/lang/String;","java/lang/String");
+        string.add_static("CASE_INSENSITIVE_ORDER",FieldType::Bool);
         //
         res.insert_class(string);
         let mut class_class = FatClass::new("java/lang/Class", "java/lang/Object");
-        class_class.add_virtual(
-            "getClassLoader()Ljava/lang/ClassLoader;",
-            "java/lang/Class::getClassLoader()Ljava/lang/ClassLoader;",
-        );
-        class_class.add_virtual(
-            "getResourceAsStream(Ljava/lang/String;)Ljava/io/InputStream;",
-            "java/lang/Class::getResourceAsStream(Ljava/lang/String;)Ljava/io/InputStream;",
-        );
-        class_class.add_virtual(
-            "desiredAssertionStatus()Z",
-            "java/lang/Class::desiredAssertionStatus()Z",
-        );
-        class_class.add_virtual(
-            "getTypeParameters()[Ljava/lang/reflect/TypeVariable;",
-            "java/lang/Class::getTypeParameters()[Ljava/lang/reflect/TypeVariable;",
-        );
-        class_class.add_virtual(
-            "getDeclaredField(Ljava/lang/String;)Ljava/lang/reflect/Field;",
-            "java/lang/Class::getDeclaredField(Ljava/lang/String;)Ljava/lang/reflect/Field;",
-        );
-        class_class.add_virtual(
-            "getName()Ljava/lang/String;",
-            "java/lang/Class::getName()Ljava/lang/String;",
-        );
-        class_class.add_virtual("getSuperclass()Ljava/lang/Class;","java/lang/Class::getSuperclass()Ljava/lang/Class;");
+        add_virtual!(class_class,"getClassLoader()Ljava/lang/ClassLoader;","java/lang/Class");
+        add_virtual!(class_class,"getResourceAsStream(Ljava/lang/String;)Ljava/io/InputStream;","java/lang/Class");
+        add_virtual!(class_class,"desiredAssertionStatus()Z","java/lang/Class");
+        add_virtual!(class_class,"getTypeParameters()[Ljava/lang/reflect/TypeVariable;","java/lang/Class");
+        add_virtual!(class_class,"getDeclaredField(Ljava/lang/String;)Ljava/lang/reflect/Field;","java/lang/Class");
+        add_virtual!(class_class,"getName()Ljava/lang/String;","java/lang/Class");
+        add_virtual!(class_class,"getSimpleName()Ljava/lang/String;","java/lang/Class");
+        add_virtual!(class_class,"getSuperclass()Ljava/lang/Class;","java/lang/Class");
+        add_virtual!(class_class,"getDeclaredMethod(Ljava/lang/String;[Ljava/lang/Class;)Ljava/lang/reflect/Method;","java/lang/Class");
+        add_virtual!(class_class,"isInstance(Ljava/lang/Object;)Z","java/lang/Class");
+        add_virtual!(class_class,"getConstructor([Ljava/lang/Class;)Ljava/lang/reflect/Constructor;","java/lang/Class");
+        add_virtual!(class_class,"getMethod(Ljava/lang/String;[Ljava/lang/Class;)Ljava/lang/reflect/Method;","java/lang/Class");
+        add_virtual!(class_class,"getPackage()Ljava/lang/Package;","java/lang/Class");
+        add_virtual!(class_class,"newInstance()Ljava/lang/Object;","java/lang/Class");
+        add_virtual!(class_class,"getResource(Ljava/lang/String;)Ljava/net/URL;","java/lang/Class");
+        add_virtual!(class_class,"getComponentType()Ljava/lang/Class;","java/lang/Class");
+        add_virtual!(class_class,"getDeclaredMethods()[Ljava/lang/reflect/Method;","java/lang/Class");
+        add_virtual!(class_class,"isArray()Z","java/lang/Class");
+        add_virtual!(class_class,"isPrimitive()Z","java/lang/Class");
+        add_virtual!(class_class,"isEnum()Z","java/lang/Class");
+        add_virtual!(class_class,"isAnnotation()Z","java/lang/Class");
+        add_virtual!(class_class,"getInterfaces()[Ljava/lang/Class;","java/lang/Class");
+        add_virtual!(class_class,"getEnclosingClass()Ljava/lang/Class;","java/lang/Class");
+        add_virtual!(class_class,"getCanonicalName()Ljava/lang/String;","java/lang/Class");
+        add_virtual!(class_class,"getEnumConstants()[Ljava/lang/Object;","java/lang/Class");
+        add_virtual!(class_class,"isAssignableFrom(Ljava/lang/Class;)Z","java/lang/Class");
+        add_virtual!(class_class,"getDeclaredFields()[Ljava/lang/reflect/Field;","java/lang/Class");
+        add_virtual!(class_class,"isInterface()Z","java/lang/Class");
+        add_virtual!(class_class,"cast(Ljava/lang/Object;)Ljava/lang/Object;","java/lang/Class");
+        add_virtual!(class_class,"getConstructors()[Ljava/lang/reflect/Constructor;","java/lang/Class");
+        add_virtual!(class_class,"getModifiers()I","java/lang/Class");
+        add_virtual!(class_class,"getMethods()[Ljava/lang/reflect/Method;","java/lang/Class");
+        add_virtual!(class_class,"getGenericInterfaces()[Ljava/lang/reflect/Type;","java/lang/Class");
+        add_virtual!(class_class,"asSubclass(Ljava/lang/Class;)Ljava/lang/Class;","java/lang/Class");
+        add_virtual!(class_class,"getDeclaredConstructor([Ljava/lang/Class;)Ljava/lang/reflect/Constructor;","java/lang/Class");
+        add_virtual!(class_class,"getProtectionDomain()Ljava/security/ProtectionDomain;","java/lang/Class");
+        add_virtual!(class_class,"getGenericSuperclass()Ljava/lang/reflect/Type;","java/lang/Class");
+        add_virtual!(class_class,"isMemberClass()Z","java/lang/Class");
+        add_virtual!(class_class,"isLocalClass()Z","java/lang/Class");
+        add_virtual!(class_class,"arrayType()Ljava/lang/Class;","java/lang/Class");
         res.insert_class(class_class);
         res
     }
@@ -462,16 +548,16 @@ impl ExecEnv {
             return;
         };
         let fat = crate::executor::fatops::expand_ops(bytecode, &class);
-        let max_locals = method.max_locals().unwrap();
+        let _max_locals = method.max_locals().unwrap();
         let (name, descriptor) = (method.name_index(), method.descriptor_index());
         let method_class = class.lookup_class(class.this_class()).unwrap();
         let name = class.lookup_utf8(name).unwrap();
         let descriptor = class.lookup_utf8(descriptor).unwrap();
         let mangled = mangle_method_name(method_class, name, descriptor);
-        let method_id = self.code_container.lookup_or_insert_method(&mangled);
+        let _method_id = self.code_container.lookup_or_insert_method(&mangled);
         //let argc = method_desc_to_argc(&descriptor);
         let af = method.access_flags();
-        let is_static = af.is_static();
+        let _is_static = af.is_static();
         //println!("mangled:{mangled}");
         self.insert_method(&fat, &mangled);
     }
@@ -479,6 +565,7 @@ impl ExecEnv {
         let method_id = self.code_container.lookup_or_insert_method(&mangled);
         match crate::executor::baseir::into_base(&ops, self) {
             Ok(baseir) => {
+                //println!("{mangled:?} -> {method_id}");
                 self.code_container.methods[method_id] = Some(Method::BaseIR { ops: baseir })
             }
             Err(err) => self
@@ -546,7 +633,7 @@ impl ExecEnv {
         method_id: usize,
         args: &[Value],
     ) -> Result<Value, ExecException> {
-        let mut args: Vec<_> = args.into();
+        let args: Vec<_> = args.into();
         //args.reverse();
         let e_ctx = executor::ExecCtx::new(&mut self.env_mem, &self.code_container, &args, 6);
         //todo!();
@@ -901,18 +988,26 @@ fn load_jar() {
     stdlib::insert_all(&mut exec_env);
     let class_count = classes.len() as f64;
     for (index, class) in classes.into_iter().enumerate() {
-        println!("Progress:{}%", (index as f64 / class_count) * 100.0);
-        println!("class:{}", class.name());
+        //println!("Progress:{}%", (index as f64 / class_count) * 100.0);
+        //println!("class:{}", class.name());
         exec_env.load_class(class);
     }
     exec_env.dep_status();
     panic!();
 }
 #[test]
-fn load_aa() {
-    let mut file = std::fs::File::open(
-        "target/testres/io/netty/channel/unix/DomainDatagramSocketAddress.class",
-    )
-    .unwrap();
+fn load_interface() {
+    let mut exec_env = ExecEnv::new();
+    stdlib::insert_all(&mut exec_env);
+    let mut file = std::fs::File::open("test/interface/Animal.class").unwrap();
     let class = importer::load_class(&mut file).unwrap();
+    exec_env.load_class(class);
+    let mut file = std::fs::File::open("test/interface/Dog.class").unwrap();
+    let class = importer::load_class(&mut file).unwrap();
+    exec_env.load_class(class);
+    let mut file = std::fs::File::open("test/interface/Tester.class").unwrap();
+    let class = importer::load_class(&mut file).unwrap();
+    exec_env.load_class(class);
+    //panic!();
 }
+

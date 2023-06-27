@@ -100,7 +100,7 @@ pub(crate) enum OpCode {
     New(u16),
     NewArray(u8),
     ANewArray(u16),
-    MultiNewArray(u16, u8),
+    MultiANewArray(u16, u8),
     BIPush(i8),
     SIPush(i16),
     ArrayLength,
@@ -530,7 +530,7 @@ pub(crate) fn load_ops<R: std::io::Read>(
                 let constant_pool_index = load_u16(src)?;
                 let dimensions = load_u8(src)?;
                 curr_offset += 3;
-                OpCode::MultiNewArray(constant_pool_index, dimensions)
+                OpCode::MultiANewArray(constant_pool_index, dimensions)
             }
             0xc6 => {
                 let offset = load_i16(src)?;
