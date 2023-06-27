@@ -14,6 +14,7 @@ fn insert_exceptions(exec_env: &mut ExecEnv) {
     let mut throwable = FatClass::new("java/lang/Throwable", "java/lang/Object");
     add_virtual!(throwable,"getStackTrace()[Ljava/lang/StackTraceElement;","java/lang/Throwable");
     add_virtual!(throwable,"addSuppressed(Ljava/lang/Throwable;)V","java/lang/Throwable");
+    add_virtual!(throwable,"printStackTrace(Ljava/io/PrintStream;)V","java/lang/Throwable");
     add_virtual!(throwable,"getSuppressed()[Ljava/lang/Throwable;","java/lang/Throwable");
     add_virtual!(throwable,"getMessage()Ljava/lang/String;","java/lang/Throwable");
     add_virtual!(throwable,"printStackTrace()V","java/lang/Throwable");
@@ -114,6 +115,7 @@ pub(crate) fn insert_stdio(exec_env: &mut ExecEnv) {
         "java/lang/Object",
     );
     add_virtual!(abstract_collection,"forEach(Ljava/util/function/Consumer;)V","java/util/AbstractCollection");
+    add_virtual!(abstract_collection,"addAll(Ljava/util/Collection;)Z","java/util/AbstractCollection");
     add_virtual!(abstract_collection,"isEmpty()Z","java/util/AbstractCollection");
     add_virtual!(abstract_collection,"stream()Ljava/util/stream/Stream;","java/util/AbstractCollection");
     add_virtual!(abstract_collection,"clear()V","java/util/AbstractCollection");
@@ -130,6 +132,7 @@ pub(crate) fn insert_stdio(exec_env: &mut ExecEnv) {
     );
     add_virtual!(abstract_list,"listIterator()Ljava/util/ListIterator;","java/util/AbstractList");
     add_virtual!(abstract_list,"listIterator(I)Ljava/util/ListIterator;","java/util/AbstractList");
+    add_virtual!(abstract_list,"remove(I)Ljava/lang/Object;","java/util/AbstractList");
     add_virtual!(abstract_list,"subList(II)Ljava/util/List;","java/util/AbstractList");
     exec_env.insert_class(abstract_list);
     let mut array_list = FatClass::new(
@@ -137,6 +140,7 @@ pub(crate) fn insert_stdio(exec_env: &mut ExecEnv) {
         "java/util/AbstractList",
     );
     add_virtual!(array_list,"trimToSize()V","java/util/ArrayList");
+    add_virtual!(array_list,"ensureCapacity(I)V","java/util/ArrayList");
     exec_env.insert_class(array_list);
     //todo!();
 }

@@ -252,6 +252,59 @@ impl CodeContainer {
                 self.methods.len() - 1
             })
     }
+    fn method_name(&self,id:usize)->Option<&str>{
+        for (name,method_id) in &self.method_names{
+            if id == *method_id{
+                return Some(name);
+            }
+        }
+        None
+    }
+    //  unfinalized_classes: HashMap<IString, Vec<FatClass>>,
+    fn class_dependency(&self,name:&str)->Option<&str>{
+        // unfinalized_methods: HashMap<IString, Vec<UnfinalizedMethod>>,
+        for (reason,classes) in &self.unfinalized_classes{
+            for class in classes{
+                if class.class_name() == name{
+                    return Some(reason);
+                }
+            }
+        }
+        None
+    }
+    fn method_dependency(&self,id:usize)->Option<&str>{
+        // unfinalized_methods: HashMap<IString, Vec<UnfinalizedMethod>>,
+        for (reason,methods) in &self.unfinalized_methods{
+            for method in methods{
+                if method.method_id == id{
+                    return Some(reason);
+                }
+            }
+        }
+        None
+    }
+    pub(crate) fn diagnose_method(&self,method_id:usize){
+            let name = self.method_name(method_id).unwrap();
+            let dep = self.method_dependency(method_id).unwrap();
+            println!("method with name {name} and ID {method_id} is missing, because it depends on {dep}!");
+            let mut dep = dep;
+            //let mut limiter = 0;
+            while let Some(class_dep) = self.class_dependency(dep){
+                println!("{dep} depends on {class_dep}!");
+                if self.lookup_class(class_dep).is_some(){
+                    println!("Which now exists, but {dep} does not know that.");
+                    return;
+                }
+                else{
+                    dep = class_dep;
+                }
+                //limiter += 1;
+                /*
+                if limiter > 100{
+                    panic!("Loopty loop!");
+                }*/
+            }
+    }
     fn new() -> Self {
         let object_class = Class::empty();
         let methods = Vec::new();
@@ -328,6 +381,15 @@ fn mangle_method_name_partial(method: &str, desc: &str) -> IString {
     format!("{method}{desc}").into_boxed_str()
 }
 impl ExecEnv {
+    pub fn try_find_main(&self)->Option<MethodRef>{
+        for (name,id) in &self.code_container.method_names{
+            if name.contains("Main::main([Ljava/lang/String;)V"){
+                //println!("{name} with id {id} is likely the main method!");
+                return Some(*id);
+            }
+        }
+        None
+    }
     fn get_class_virtual_methods(&self, class_id: ClassRef) -> Option<Box<[usize]>> {
         Some(
             self.code_container
@@ -385,10 +447,10 @@ impl ExecEnv {
             uclasses,
         );
         let umethods = self.code_container.unfinalized_methods.len();
-        let fmethods = self.code_container.methods.len();
-        println!("Method finalization status {}%, Finalized: {}, Unfinalized: {}",
-            (fmethods as f64)/((umethods + fmethods) as f64)*100.0,
-            fmethods,
+        let methods = self.code_container.methods.len();
+        println!("Method finalization status {}%, Total: {}, Unfinalized: {}",
+            (1.0 - (umethods as f64)/(methods as f64))*100.0,
+            methods,
             umethods,
         );
     }
@@ -488,6 +550,7 @@ impl ExecEnv {
         add_virtual!(string,"codePoints()Ljava/util/stream/IntStream;","java/lang/String");
         add_virtual!(string,"chars()Ljava/util/stream/IntStream;","java/lang/String");
         add_virtual!(string,"startsWith(Ljava/lang/String;I)Z","java/lang/String");
+        add_virtual!(string,"toLowerCase(Ljava/util/Locale;)Ljava/lang/String;","java/lang/String");
         add_virtual!(string,"replace(Ljava/lang/CharSequence;Ljava/lang/CharSequence;)Ljava/lang/String;","java/lang/String");
         string.add_static("CASE_INSENSITIVE_ORDER",FieldType::Bool);
         //
@@ -559,10 +622,11 @@ impl ExecEnv {
         let af = method.access_flags();
         let _is_static = af.is_static();
         //println!("mangled:{mangled}");
-        self.insert_method(&fat, &mangled);
-    }
-    fn insert_method(&mut self, ops: &[crate::executor::fatops::FatOp], mangled: &str) {
         let method_id = self.code_container.lookup_or_insert_method(&mangled);
+        self.insert_method(&fat, method_id);
+    }
+    fn insert_method(&mut self, ops: &[crate::executor::fatops::FatOp], method_id:MethodRef) {
+        
         match crate::executor::baseir::into_base(&ops, self) {
             Ok(baseir) => {
                 //println!("{mangled:?} -> {method_id}");
@@ -579,15 +643,31 @@ impl ExecEnv {
                 }),
         }
     }
+    pub(crate) fn insert_dependant_class(&mut self,dependency_name:&str){
+        if let Some(dependants) = self.code_container.unfinalized_classes.remove(dependency_name){
+            for dependant in dependants{
+                self.insert_class(dependant);
+            }
+        }
+    }
+    pub(crate) fn insert_dependant_method(&mut self,dependency_name:&str){
+        if let Some(dependants) = self.code_container.unfinalized_methods.remove(dependency_name){
+            for dependant in dependants{
+                self.insert_method(&dependant.ops,dependant.method_id);
+            }
+        }
+    }
     pub(crate) fn insert_class(
         &mut self,
         base_class: crate::executor::fatclass::FatClass,
     ) -> Option<ClassRef> {
         match crate::executor::class::finalize(&base_class, self) {
-            Ok(final_class) => Some(
-                self.code_container
-                    .set_or_replace_class(base_class.class_name(), final_class),
-            ),
+            Ok(final_class) => {
+                let cref = self.code_container.set_or_replace_class(base_class.class_name(), final_class);
+                self.insert_dependant_class(base_class.class_name());
+                self.insert_dependant_method(base_class.class_name());
+                Some(cref)
+            },
             Err(err) => {
                 self.code_container
                     .unfinalized_classes
@@ -628,6 +708,7 @@ impl ExecEnv {
     pub(crate) fn set_static(&mut self, index: StaticRef, value: Value) {
         EnvMemory::set_static(&mut self.env_mem as *mut _, index, value)
     }
+    
     pub fn call_method(
         &mut self,
         method_id: usize,
@@ -638,11 +719,17 @@ impl ExecEnv {
         let e_ctx = executor::ExecCtx::new(&mut self.env_mem, &self.code_container, &args, 6);
         //todo!();
         let method = self.code_container.methods.get(method_id);
-        method
+        let method_ref = method
             .ok_or(ExecException::MethodNotFound)?
-            .as_ref()
-            .ok_or(ExecException::MethodNotFound)?
-            .call(e_ctx)
+            .as_ref();
+        if let Some(method) = method_ref{
+            method.call(e_ctx)
+        }
+        else{
+            self.code_container.diagnose_method(method_id);
+            Err(ExecException::MethodNotFound)
+        }
+     
     }
     fn insert_stdlib(&mut self) {
         stdlib::insert_all(self);
@@ -993,6 +1080,9 @@ fn load_jar() {
         exec_env.load_class(class);
     }
     exec_env.dep_status();
+    let main = exec_env.try_find_main().expect("Can't find main!");
+    let argc_ref = 0;
+    exec_env.call_method(main,&[Value::ObjectRef(argc_ref)]).unwrap();
     panic!();
 }
 #[test]

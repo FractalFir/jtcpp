@@ -181,15 +181,19 @@ impl<'env> ExecCtx<'env> {
         method_id: usize,
     ) -> Result<Value, ExecException> {
         //println!("Invoking {method_id}");
-        let method = self
-            .code_container
-            .methods
-            .get(method_id)
+
+        let method = self.code_container.methods.get(method_id);
+        let method_ref = method
             .ok_or(ExecException::MethodNotFound)?
-            .as_ref()
-            .ok_or(ExecException::MethodNotFound)?;
-        let method = |ctx| method.call(ctx);
-        self.call(args, 10, method)
+            .as_ref();
+        if let Some(method) = method_ref{
+            let method = |ctx| method.call(ctx);
+            self.call(args, 10, method)
+        }
+        else{
+            self.code_container.diagnose_method(method_id);
+            Err(ExecException::MethodNotFound)
+        }
     }
     /*
     fn call(parrent:&Self,args:&[Value],locals:usize,stack:usize,callable:impl Fn(&Self)->Result<Value, ExecException>)->Result<Value, ExecException>{
