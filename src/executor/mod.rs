@@ -168,7 +168,7 @@ impl<'env> ExecCtx<'env> {
         callable(call_arg)
     }
     fn new_obj(&mut self, class: ClassRef) -> ObjectRef {
-        let new_obj = self.code_container.classes[class].new();
+        let new_obj = self.code_container.new_obj(class);
         unsafe { EnvMemory::new_obj(self.memory.get(), new_obj) }
     }
     fn new_array(&mut self, default_value: Value, length: usize) -> ObjectRef {
@@ -182,7 +182,7 @@ impl<'env> ExecCtx<'env> {
     ) -> Result<Value, ExecException> {
         //println!("Invoking {method_id}");
 
-        let method = self.code_container.methods.get(method_id);
+        let method = self.code_container.get_method(method_id);
         let method_ref = method
             .ok_or(ExecException::MethodNotFound)?
             .as_ref();

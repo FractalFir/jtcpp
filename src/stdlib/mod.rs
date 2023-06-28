@@ -49,6 +49,60 @@ impl crate::Invokable for STDIO_PRINTLN_IMPL {
         Ok(Value::Void)
     }
 }
+pub(crate) fn insert_path(exec_env: &mut ExecEnv) {
+    let mut path = FatClass::new(
+        "java/nio/file/Path",
+        "java/lang/Object",
+    );
+    //add_virtual!(path,"","java/nio/file/Path");
+    exec_env.insert_class(path);
+}
+pub(crate) fn insert_proxy(exec_env: &mut ExecEnv) {
+    //panic!();
+    let mut proxy = FatClass::new(
+        "java/net/Proxy",
+        "java/lang/Object",
+    );
+    //add_virtual!(path,"","java/net/Proxy");
+    exec_env.insert_class(proxy);
+}
+pub(crate) fn insert_file(exec_env: &mut ExecEnv) {
+    let mut file = FatClass::new(
+        "java/io/File",
+        "java/lang/Object",
+    );
+    add_virtual!(file,"getPath()Ljava/lang/String;","java/io/File");
+    add_virtual!(file,"canExecute()Z","java/io/File");
+    add_virtual!(file,"canWrite()Z","java/io/File");
+    add_virtual!(file,"canRead()Z","java/io/File");
+    add_virtual!(file,"toPath()Ljava/nio/file/Path;","java/io/File");
+    add_virtual!(file,"getAbsoluteFile()Ljava/io/File;","java/io/File");
+    add_virtual!(file,"listFiles()[Ljava/io/File;","java/io/File");
+    add_virtual!(file,"listFiles(Ljava/io/FileFilter;)[Ljava/io/File;","java/io/File");
+    add_virtual!(file,"getCanonicalFile()Ljava/io/File;","java/io/File");
+    add_virtual!(file,"getCanonicalPath()Ljava/lang/String;","java/io/File");
+    add_virtual!(file,"getParentFile()Ljava/io/File;","java/io/File");
+    add_virtual!(file,"getName()Ljava/lang/String;","java/io/File");
+    add_virtual!(file,"compareTo(Ljava/io/File;)I","java/io/File");
+    add_virtual!(file,"setLastModified(J)Z","java/io/File");
+    add_virtual!(file,"lastModified()J","java/io/File");
+    add_virtual!(file,"createNewFile()Z","java/io/File");
+    add_virtual!(file,"getAbsolutePath()Ljava/lang/String;","java/io/File");
+    add_virtual!(file,"renameTo(Ljava/io/File;)Z","java/io/File");
+    add_virtual!(file,"isDirectory()Z","java/io/File");
+    add_virtual!(file,"isAbsolute()Z","java/io/File");
+    add_virtual!(file,"isFile()Z","java/io/File");
+    add_virtual!(file,"isHidden()Z","java/io/File");
+    add_virtual!(file,"length()J","java/io/File");
+    add_virtual!(file,"getParent()Ljava/lang/String;","java/io/File");
+    add_virtual!(file,"toURI()Ljava/net/URI;","java/io/File");
+    add_virtual!(file,"mkdirs()Z","java/io/File");
+    add_virtual!(file,"exists()Z","java/io/File");
+    add_virtual!(file,"delete()Z","java/io/File");  
+    add_virtual!(file,"list()[Ljava/lang/String;","java/io/File");   
+    add_virtual!(file,"deleteOnExit()V","java/io/File");
+    exec_env.insert_class(file);
+}
 pub(crate) fn insert_stdio(exec_env: &mut ExecEnv) {
     if let Some(_) = exec_env.lookup_class(STDIO_INSERTION_MARKER) {
         return;
@@ -85,6 +139,7 @@ pub(crate) fn insert_stdio(exec_env: &mut ExecEnv) {
     add_virtual!(print_stream,"println(D)V","java/io/PrintStream");
     add_virtual!(print_stream,"println(Z)V","java/io/PrintStream");
     add_virtual!(print_stream,"println(F)V","java/io/PrintStream");
+    add_virtual!(print_stream,"printf(Ljava/lang/String;[Ljava/lang/Object;)Ljava/io/PrintStream;","java/io/PrintStream");
     add_virtual!(print_stream,"print(Ljava/lang/String;)V","java/io/PrintStream");
     add_virtual!(print_stream,"print(J)V","java/io/PrintStream");
     add_virtual!(print_stream,"print(Ljava/lang/Object;)V","java/io/PrintStream");
@@ -133,6 +188,7 @@ pub(crate) fn insert_stdio(exec_env: &mut ExecEnv) {
     add_virtual!(abstract_list,"listIterator()Ljava/util/ListIterator;","java/util/AbstractList");
     add_virtual!(abstract_list,"listIterator(I)Ljava/util/ListIterator;","java/util/AbstractList");
     add_virtual!(abstract_list,"remove(I)Ljava/lang/Object;","java/util/AbstractList");
+    add_virtual!(abstract_list,"set(ILjava/lang/Object;)Ljava/lang/Object;","java/util/AbstractList");
     add_virtual!(abstract_list,"subList(II)Ljava/util/List;","java/util/AbstractList");
     exec_env.insert_class(abstract_list);
     let mut array_list = FatClass::new(
@@ -142,6 +198,9 @@ pub(crate) fn insert_stdio(exec_env: &mut ExecEnv) {
     add_virtual!(array_list,"trimToSize()V","java/util/ArrayList");
     add_virtual!(array_list,"ensureCapacity(I)V","java/util/ArrayList");
     exec_env.insert_class(array_list);
+    insert_path(exec_env);
+    insert_file(exec_env);
+    insert_proxy(exec_env);
     //todo!();
 }
 pub(crate) fn insert_core(exec_env: &mut ExecEnv) {

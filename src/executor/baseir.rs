@@ -187,6 +187,11 @@ pub(crate) enum BaseIR {
     MonitorEnter,
     MonitorExit,
     Invalid, //Special op which represents invalid op which should have not been produced.
+    LookupSwitch(Box<LookupSwitch>),
+}
+#[derive(Debug)]
+pub(crate) struct LookupSwitch{
+    default_op:usize,pairs:Box<[(i32,usize)]>
 }
 fn lookup_static(
     class_name: &str,
@@ -199,7 +204,7 @@ fn lookup_static(
     } else {
         return Err(UnmetDependency::NeedsClass(class_name.into()));
     };
-    if let Some(static_id) = exec_env.code_container.classes[class_id].get_static(field_name) {
+    if let Some(static_id) = exec_env.get_static(class_id,field_name) {
         Ok(static_id)
     } else {
         println!("{class_name} does not have static field {field_name}! Skipping this method to try and run anyway!");
@@ -217,8 +222,8 @@ fn lookup_field(
     } else {
         return Err(UnmetDependency::NeedsClass(class_name.into()));
     };
-    if let Some((field_id, _ftype)) =
-        exec_env.code_container.classes[class_id].get_field(field_name)
+    if let Some((field_id,_ftype)) =
+        exec_env.get_field(class_id,field_name)
     {
         Ok(field_id)
     } else {
@@ -232,7 +237,7 @@ pub(crate) fn into_base(
     //println!("Fat:{fat:?}");
     let mut newops = Vec::with_capacity(fat.len());
     for op in fat {
-        let newop = match op {
+        let newop = match &op {
             FatOp::AConstNull => BaseIR::AConst(0),
             FatOp::BConst(byte) => BaseIR::IConst(*byte as i32),
             FatOp::DConst(double) => BaseIR::DConst(*double as f64),
@@ -340,9 +345,7 @@ pub(crate) fn into_base(
                 } else {
                     return Err(UnmetDependency::NeedsClass(class_name.clone()));
                 };
-                let virtual_index = exec_env.code_container.classes[class_id]
-                    .lookup_virtual(method)
-                    .unwrap();
+                let virtual_index = exec_env.lookup_virtual(class_id,method).unwrap();
                 BaseIR::InvokeVirtual(virtual_index, *argc)
             }
             FatOp::AGetField(class_name, field_name) => {
@@ -600,6 +603,9 @@ pub(crate) fn into_base(
             FatOp::MonitorEnter => BaseIR::MonitorEnter,
             FatOp::MonitorExit => BaseIR::MonitorExit,
             FatOp::Throw => BaseIR::Throw,
+            FatOp::LookupSwitch{default_op,pairs}=>{
+                BaseIR::LookupSwitch(Box::new(LookupSwitch{default_op:*default_op,pairs:pairs.clone()}))
+            }
             //TEMPORARY!
             FatOp::InvokeDynamic => BaseIR::Invalid,
             FatOp::InvokeInterface(_, _) => BaseIR::Invalid,

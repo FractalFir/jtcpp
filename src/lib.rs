@@ -1,17 +1,21 @@
 pub(crate) type IString = Box<str>;
-
+use crate::executor::FieldType;
 use std::collections::HashMap;
 mod executor;
 mod importer;
 mod stdlib;
+mod code_container;
 pub type ObjectRef = usize;
 pub type ClassRef = usize;
 pub type StaticRef = usize;
 pub type MethodRef = usize;
+pub type FieldRef = usize;
+pub type VirtualMethodRef = usize;
 use crate::executor::baseir::BaseIR;
 use crate::executor::fatclass::FatClass;
 use executor::class::Class;
 use executor::ExecCtx;
+use code_container::{CodeContainer,UnfinalizedMethod};
 #[macro_export]
 macro_rules! add_virtual{
     ($class:ident,$vmangled:literal,$class_path:literal)=>{
@@ -207,125 +211,6 @@ impl EnvMemory {
         }
     }
 }
-struct UnfinalizedMethod {
-    ops: Box<[crate::executor::fatops::FatOp]>,
-    method_id: MethodRef,
-}
-struct CodeContainer {
-    classes: Vec<Class>,
-    class_names: HashMap<IString, usize>,
-    methods: Vec<Option<Method>>,
-    method_names: HashMap<IString, usize>,
-    static_strings: HashMap<IString, ObjectRef>,
-    const_classes: HashMap<ClassRef, ObjectRef>,
-    // have some unresolved dependencies.
-    unfinalized_classes: HashMap<IString, Vec<FatClass>>,
-    unfinalized_methods: HashMap<IString, Vec<UnfinalizedMethod>>,
-}
-impl CodeContainer {
-    fn get_virtual(&self, class: ClassRef, id: usize) -> Option<usize> {
-        self.classes[class].get_virtual(id)
-    }
-    //pub fn lookup_virutal(&self,id:
-    fn lookup_class(&self, name: &str) -> Option<usize> {
-        //println!("class_names:{:?}",self.class_names);
-        self.class_names.get(name).copied()
-    }
-    fn set_or_replace_class(&mut self, name: &str, mut class: Class) -> usize {
-        let idx = *self
-            .class_names
-            .entry(name.to_owned().into_boxed_str())
-            .or_insert_with(|| {
-                self.classes.push(Class::empty());
-                self.classes.len() - 1
-            });
-        class.set_id(idx);
-        self.classes[idx] = class;
-        idx
-    }
-    fn lookup_or_insert_method(&mut self, name: &str) -> usize {
-        *self
-            .method_names
-            .entry(name.to_owned().into_boxed_str())
-            .or_insert_with(|| {
-                self.methods.push(None);
-                self.methods.len() - 1
-            })
-    }
-    fn method_name(&self,id:usize)->Option<&str>{
-        for (name,method_id) in &self.method_names{
-            if id == *method_id{
-                return Some(name);
-            }
-        }
-        None
-    }
-    //  unfinalized_classes: HashMap<IString, Vec<FatClass>>,
-    fn class_dependency(&self,name:&str)->Option<&str>{
-        // unfinalized_methods: HashMap<IString, Vec<UnfinalizedMethod>>,
-        for (reason,classes) in &self.unfinalized_classes{
-            for class in classes{
-                if class.class_name() == name{
-                    return Some(reason);
-                }
-            }
-        }
-        None
-    }
-    fn method_dependency(&self,id:usize)->Option<&str>{
-        // unfinalized_methods: HashMap<IString, Vec<UnfinalizedMethod>>,
-        for (reason,methods) in &self.unfinalized_methods{
-            for method in methods{
-                if method.method_id == id{
-                    return Some(reason);
-                }
-            }
-        }
-        None
-    }
-    pub(crate) fn diagnose_method(&self,method_id:usize){
-            let name = self.method_name(method_id).unwrap();
-            let dep = self.method_dependency(method_id).unwrap();
-            println!("method with name {name} and ID {method_id} is missing, because it depends on {dep}!");
-            let mut dep = dep;
-            //let mut limiter = 0;
-            while let Some(class_dep) = self.class_dependency(dep){
-                println!("{dep} depends on {class_dep}!");
-                if self.lookup_class(class_dep).is_some(){
-                    println!("Which now exists, but {dep} does not know that.");
-                    return;
-                }
-                else{
-                    dep = class_dep;
-                }
-                //limiter += 1;
-                /*
-                if limiter > 100{
-                    panic!("Loopty loop!");
-                }*/
-            }
-    }
-    fn new() -> Self {
-        let object_class = Class::empty();
-        let methods = Vec::new();
-        let classes = vec![];
-        let class_names = HashMap::with_capacity(0x100);
-        let method_names = HashMap::with_capacity(0x100);
-        let mut res = Self {
-            methods,
-            classes,
-            class_names,
-            method_names,
-            unfinalized_classes: HashMap::new(),
-            unfinalized_methods: HashMap::new(),
-            static_strings: HashMap::new(),
-            const_classes: HashMap::new(),
-        };
-        res.set_or_replace_class("java/lang/Object", object_class);
-        res
-    }
-    //fn set_meth
-}
 struct ExecEnv {
     code_container: CodeContainer,
     env_mem: EnvMemory,
@@ -381,11 +266,28 @@ fn mangle_method_name_partial(method: &str, desc: &str) -> IString {
     format!("{method}{desc}").into_boxed_str()
 }
 impl ExecEnv {
-    pub fn try_find_main(&self)->Option<MethodRef>{
-        for (name,id) in &self.code_container.method_names{
+    pub(crate) fn lookup_virtual(&self,class_id:ClassRef,method_name:&str)->Option<VirtualMethodRef>{
+        self.code_container.lookup_virtual(class_id,method_name)
+    }
+    pub(crate) fn get_static(&self,class_id:ClassRef,static_name:&str)->Option<StaticRef>{
+        self.code_container.get_static(class_id,static_name)
+    }
+    pub(crate) fn get_field(&self,class_id:ClassRef,field_name:&str)->Option<(FieldRef, &FieldType)>{
+        self.code_container.get_field(class_id,field_name)
+    }
+    pub fn try_find_main(&self,hint:Option<&str>)->Option<MethodRef>{
+        for (name,id) in self.code_container.method_names(){
             if name.contains("Main::main([Ljava/lang/String;)V"){
+                if let Some(hint) = hint{
+                    if name.contains(hint){
+                        return Some(*id);
+                    }
+                }
+                else{
+                    return Some(*id);
+                }
                 //println!("{name} with id {id} is likely the main method!");
-                return Some(*id);
+                
             }
         }
         None
@@ -393,8 +295,7 @@ impl ExecEnv {
     fn get_class_virtual_methods(&self, class_id: ClassRef) -> Option<Box<[usize]>> {
         Some(
             self.code_container
-                .classes
-                .get(class_id)?
+                .get_class(class_id)?
                 .virtual_methods()
                 .into(),
         )
@@ -402,8 +303,7 @@ impl ExecEnv {
     fn get_class_virtual_map(&self, class_id: ClassRef) -> Option<HashMap<IString, usize>> {
         Some(
             self.code_container
-                .classes
-                .get(class_id)?
+                .get_class(class_id)?
                 .virtual_map()
                 .clone(),
         )
@@ -411,8 +311,7 @@ impl ExecEnv {
     fn get_class_statics_map(&self, class_id: ClassRef) -> Option<HashMap<IString, usize>> {
         Some(
             self.code_container
-                .classes
-                .get(class_id)?
+                .get_class(class_id)?
                 .statics_map()
                 .clone(),
         )
@@ -423,8 +322,7 @@ impl ExecEnv {
     ) -> Option<Box<[crate::executor::FieldType]>> {
         Some(
             self.code_container
-                .classes
-                .get(class_id)?
+                .get_class(class_id)?
                 .field_types()
                 .into(),
         )
@@ -432,22 +330,21 @@ impl ExecEnv {
     fn get_class_field_map(&self, class_id: ClassRef) -> Option<HashMap<IString, usize>> {
         Some(
             self.code_container
-                .classes
-                .get(class_id)?
+                .get_class(class_id)?
                 .field_map()
                 .clone(),
         )
     }
     fn dep_status(&self) {
-        let uclasses = self.code_container.unfinalized_classes.len();
-        let fclasses = self.code_container.classes.len();
+        let uclasses = self.code_container.unfinalized_class_count();
+        let fclasses = self.code_container.classes().len();
         println!("Class finalization status {}%, Finalized: {}, Unfinalized: {}",
             (fclasses as f64)/((uclasses + fclasses) as f64)*100.0,
             fclasses,
             uclasses,
         );
         let umethods = self.code_container.unfinalized_methods.len();
-        let methods = self.code_container.methods.len();
+        let methods = self.code_container.methods().len();
         println!("Method finalization status {}%, Total: {}, Unfinalized: {}",
             (1.0 - (umethods as f64)/(methods as f64))*100.0,
             methods,
@@ -457,7 +354,7 @@ impl ExecEnv {
     fn const_string(&mut self, string: &str) -> ObjectRef {
         *self
             .code_container
-            .static_strings
+            .static_strings()
             .entry(string.into())
             .or_insert_with(|| {
                 let new_obj = Object::String(string.into());
@@ -470,7 +367,7 @@ impl ExecEnv {
     fn const_class(&mut self, class_id: ClassRef) -> ObjectRef {
         *self
             .code_container
-            .const_classes
+            .const_classes()
             .entry(class_id)
             .or_insert_with(|| {
                 let new_obj = Object::new_class(class_id);
@@ -550,7 +447,10 @@ impl ExecEnv {
         add_virtual!(string,"codePoints()Ljava/util/stream/IntStream;","java/lang/String");
         add_virtual!(string,"chars()Ljava/util/stream/IntStream;","java/lang/String");
         add_virtual!(string,"startsWith(Ljava/lang/String;I)Z","java/lang/String");
+        add_virtual!(string,"codePointAt(I)I","java/lang/String");
+        add_virtual!(string,"codePointCount(II)I","java/lang/String");
         add_virtual!(string,"toLowerCase(Ljava/util/Locale;)Ljava/lang/String;","java/lang/String");
+        add_virtual!(string,"toUpperCase(Ljava/util/Locale;)Ljava/lang/String;","java/lang/String");
         add_virtual!(string,"replace(Ljava/lang/CharSequence;Ljava/lang/CharSequence;)Ljava/lang/String;","java/lang/String");
         string.add_static("CASE_INSENSITIVE_ORDER",FieldType::Bool);
         //
@@ -561,6 +461,7 @@ impl ExecEnv {
         add_virtual!(class_class,"desiredAssertionStatus()Z","java/lang/Class");
         add_virtual!(class_class,"getTypeParameters()[Ljava/lang/reflect/TypeVariable;","java/lang/Class");
         add_virtual!(class_class,"getDeclaredField(Ljava/lang/String;)Ljava/lang/reflect/Field;","java/lang/Class");
+        add_virtual!(class_class,"getTypeName()Ljava/lang/String;","java/lang/Class");
         add_virtual!(class_class,"getName()Ljava/lang/String;","java/lang/Class");
         add_virtual!(class_class,"getSimpleName()Ljava/lang/String;","java/lang/Class");
         add_virtual!(class_class,"getSuperclass()Ljava/lang/Class;","java/lang/Class");
@@ -574,6 +475,7 @@ impl ExecEnv {
         add_virtual!(class_class,"getComponentType()Ljava/lang/Class;","java/lang/Class");
         add_virtual!(class_class,"getDeclaredMethods()[Ljava/lang/reflect/Method;","java/lang/Class");
         add_virtual!(class_class,"isArray()Z","java/lang/Class");
+        add_virtual!(class_class,"isAnonymousClass()Z","java/lang/Class");
         add_virtual!(class_class,"isPrimitive()Z","java/lang/Class");
         add_virtual!(class_class,"isEnum()Z","java/lang/Class");
         add_virtual!(class_class,"isAnnotation()Z","java/lang/Class");
@@ -595,8 +497,29 @@ impl ExecEnv {
         add_virtual!(class_class,"getGenericSuperclass()Ljava/lang/reflect/Type;","java/lang/Class");
         add_virtual!(class_class,"isMemberClass()Z","java/lang/Class");
         add_virtual!(class_class,"isLocalClass()Z","java/lang/Class");
+        add_virtual!(class_class,"getSigners()[Ljava/lang/Object;","java/lang/Class");
         add_virtual!(class_class,"arrayType()Ljava/lang/Class;","java/lang/Class");
         res.insert_class(class_class);
+        let mut number_class =FatClass::new("java/lang/Number", "java/lang/Object");
+        add_virtual!(number_class,"intValue()I","java/lang/Number");
+        add_virtual!(number_class,"shortValue()S","java/lang/Number");
+        add_virtual!(number_class,"longValue()J","java/lang/Number");
+        add_virtual!(number_class,"byteValue()B","java/lang/Number");
+        add_virtual!(number_class,"doubleValue()D","java/lang/Number");
+        add_virtual!(number_class,"floatValue()F","java/lang/Number");
+        res.insert_class(number_class);
+        let mut intiger_class = FatClass::new("java/lang/Integer", "java/lang/Number");
+        add_virtual!(intiger_class,"intValue()I","java/lang/Integer");
+        add_virtual!(intiger_class,"compareTo(Ljava/lang/Integer;)I","java/lang/Integer");
+        //add_virtual!(intiger_class,"intValue()I","java/lang/Integer");
+        intiger_class.add_static("TYPE",FieldType::ObjectRef);
+        res.insert_class(intiger_class);
+        let mut enum_class = FatClass::new("java/lang/Enum", "java/lang/Object");
+        add_virtual!(enum_class,"ordinal()I","java/lang/Enum");
+        add_virtual!(enum_class,"compareTo(Ljava/lang/Enum;)I","java/lang/Enum");
+        add_virtual!(enum_class,"name()Ljava/lang/String;","java/lang/Enum");
+        add_virtual!(enum_class,"getDeclaringClass()Ljava/lang/Class;","java/lang/Enum");
+        res.insert_class(enum_class);
         res
     }
     pub(crate) fn load_method(
@@ -607,7 +530,7 @@ impl ExecEnv {
         let bytecode = if let Some(bytecode) = method.bytecode() {
             bytecode
         } else {
-            self.code_container.methods.push(None);
+            self.code_container.methods_mut().push(None);
             return;
         };
         let fat = crate::executor::fatops::expand_ops(bytecode, &class);
@@ -626,11 +549,10 @@ impl ExecEnv {
         self.insert_method(&fat, method_id);
     }
     fn insert_method(&mut self, ops: &[crate::executor::fatops::FatOp], method_id:MethodRef) {
-        
         match crate::executor::baseir::into_base(&ops, self) {
             Ok(baseir) => {
                 //println!("{mangled:?} -> {method_id}");
-                self.code_container.methods[method_id] = Some(Method::BaseIR { ops: baseir })
+                self.code_container.methods_mut()[method_id] = Some(Method::BaseIR { ops: baseir })
             }
             Err(err) => self
                 .code_container
@@ -669,11 +591,7 @@ impl ExecEnv {
                 Some(cref)
             },
             Err(err) => {
-                self.code_container
-                    .unfinalized_classes
-                    .entry(err.dependency().into())
-                    .or_insert(Vec::new())
-                    .push(base_class);
+                self.code_container.add_unfinalized_class(err.dependency(),base_class);
                 None
             }
         }
@@ -686,24 +604,24 @@ impl ExecEnv {
         }
     }
     pub(crate) fn lookup_method(&self, method_name: &str) -> Option<MethodRef> {
-        self.code_container.method_names.get(method_name).copied()
+        self.code_container.method_names().get(method_name).copied()
     }
     pub(crate) fn replace_method_with_extern<T: Invokable + 'static>(
         &mut self,
         methodref: MethodRef,
         extern_fn: T,
     ) {
-        self.code_container.methods[methodref] = Some(Method::Invokable(Box::new(extern_fn)));
+        self.code_container.methods_mut()[methodref] = Some(Method::Invokable(Box::new(extern_fn)));
     }
     pub(crate) fn lookup_class(&self, class_name: &str) -> Option<usize> {
         self.code_container.lookup_class(class_name)
     }
     pub(crate) fn new_obj(&mut self, class: ClassRef) -> ObjectRef {
-        let new_obj = self.code_container.classes[class].new();
+        let new_obj = self.code_container.new_obj(class);
         EnvMemory::new_obj(&mut self.env_mem as *mut _, new_obj)
     }
     pub(crate) fn get_static_id(&mut self, class: ClassRef, name: &str) -> Option<StaticRef> {
-        self.code_container.classes[class].get_static(name)
+        self.code_container.classes()[class].get_static(name)
     }
     pub(crate) fn set_static(&mut self, index: StaticRef, value: Value) {
         EnvMemory::set_static(&mut self.env_mem as *mut _, index, value)
@@ -718,7 +636,7 @@ impl ExecEnv {
         //args.reverse();
         let e_ctx = executor::ExecCtx::new(&mut self.env_mem, &self.code_container, &args, 6);
         //todo!();
-        let method = self.code_container.methods.get(method_id);
+        let method = self.code_container.methods().get(method_id);
         let method_ref = method
             .ok_or(ExecException::MethodNotFound)?
             .as_ref();
@@ -731,8 +649,11 @@ impl ExecEnv {
         }
      
     }
-    fn insert_stdlib(&mut self) {
+    pub fn insert_stdlib(&mut self) {
         stdlib::insert_all(self);
+    }
+    pub fn load_jar<R:std::io::Read + std::io::Seek>(jar:&mut R,prefix:Option<&str>){
+        todo!();
     }
 }
 //trait SimpleARG{};
@@ -943,8 +864,7 @@ fn exec_call() {
             Value::Int(0)
         );
     }
-    exec_env.code_container.methods[extern_call] =
-        Some(Method::Invokable(Box::new(AddFiveInvokable)));
+    exec_env.replace_method_with_extern(extern_call,AddFiveInvokable);
     for a in -1000..1000 {
         assert_eq!(
             exec_env.call_method(extern_call, &[Value::Int(a)]).unwrap(),
@@ -1005,8 +925,7 @@ fn gravity() {
     let sqrt_extern_call = exec_env
         .lookup_method(&mangle_method_name("Gravity", "Sqrt", "(F)F"))
         .unwrap();
-    exec_env.code_container.methods[sqrt_extern_call] =
-        Some(Method::Invokable(Box::new(SqrtInvokable)));
+    exec_env.replace_method_with_extern(sqrt_extern_call,SqrtInvokable);
     let obj = exec_env.new_obj(class);
     exec_env
         .call_method(
@@ -1069,18 +988,25 @@ fn nbody() {
 
 #[test]
 fn load_jar() {
-    let mut file = std::fs::File::open("test/server.jar").unwrap();
+    let mut file = std::fs::File::open("test/jopt.jar").unwrap();
     let classes = importer::load_jar(&mut file).unwrap();
     let mut exec_env = ExecEnv::new();
     stdlib::insert_all(&mut exec_env);
-    let class_count = classes.len() as f64;
-    for (index, class) in classes.into_iter().enumerate() {
-        //println!("Progress:{}%", (index as f64 / class_count) * 100.0);
-        //println!("class:{}", class.name());
+    for class in classes{
+        let name = class.name().to_owned();
+        //println!("joptclass:{name}");
+        exec_env.load_class(class);
+        //exec_env.code_container.class_alias(&name,"joptsimple/");
+    }
+    //panic!();
+    let id = exec_env.lookup_class("joptsimple/OptionSet").unwrap();
+    let mut file = std::fs::File::open("test/server.jar").unwrap();
+    let classes = importer::load_jar(&mut file).unwrap();
+    for class in classes{
         exec_env.load_class(class);
     }
     exec_env.dep_status();
-    let main = exec_env.try_find_main().expect("Can't find main!");
+    let main = exec_env.try_find_main(Some("server")).expect("Can't find main!");
     let argc_ref = 0;
     exec_env.call_method(main,&[Value::ObjectRef(argc_ref)]).unwrap();
     panic!();
