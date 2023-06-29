@@ -6,7 +6,9 @@ use crate::Value;
 use crate::add_virtual;
 const STDIO_INSERTION_MARKER: &str = "STDIO Inserted!";
 const CORE_INSERTION_MARKER: &str = "Core Inserted!";
-struct STDIO_PRINTLN_IMPL;
+struct StdoutPrintlnString;
+struct StdoutPrintlnObject;
+struct StdoutPrintlnInt;
 use crate::ExecCtx;
 use crate::ExecException;
 fn insert_exceptions(exec_env: &mut ExecEnv) {
@@ -40,7 +42,7 @@ fn insert_string_methods(_exec_env: &mut ExecEnv) {
 fn insert_record(exec_env: &mut ExecEnv) {
     exec_env.insert_class(FatClass::new("java/lang/Record", "java/lang/Object"));
 }
-impl crate::Invokable for STDIO_PRINTLN_IMPL {
+impl crate::Invokable for StdoutPrintlnString {
     fn call(&self, ctx: ExecCtx) -> Result<Value, ExecException> {
         let arg = ctx.get_local(1).unwrap();
         let objref = arg.as_objref().unwrap();
@@ -49,8 +51,16 @@ impl crate::Invokable for STDIO_PRINTLN_IMPL {
         Ok(Value::Void)
     }
 }
+impl crate::Invokable for StdoutPrintlnInt {
+    fn call(&self, ctx: ExecCtx) -> Result<Value, ExecException> {
+        let arg = ctx.get_local(1).unwrap();
+        let int = arg.as_int().unwrap();
+        println!("{int}");
+        Ok(Value::Void)
+    }
+}
 pub(crate) fn insert_path(exec_env: &mut ExecEnv) {
-    let mut path = FatClass::new(
+    let path = FatClass::new(
         "java/nio/file/Path",
         "java/lang/Object",
     );
@@ -59,7 +69,7 @@ pub(crate) fn insert_path(exec_env: &mut ExecEnv) {
 }
 pub(crate) fn insert_proxy(exec_env: &mut ExecEnv) {
     //panic!();
-    let mut proxy = FatClass::new(
+    let proxy = FatClass::new(
         "java/net/Proxy",
         "java/lang/Object",
     );
@@ -146,11 +156,15 @@ pub(crate) fn insert_stdio(exec_env: &mut ExecEnv) {
     let _print_stream = exec_env.insert_class(print_stream);
 
     let mut stdout_stream = FatClass::new("jbi/Internal/io/out", "java/io/PrintStream"); 
-    const JBI_PRINTLN_IMPL_NAME: &str = "jbi/Internal/io/out::println(Ljava/lang/String;)V";
-    stdout_stream.add_virtual("println(Ljava/lang/String;)V", JBI_PRINTLN_IMPL_NAME);
+    const JBI_PRINT_STRING_NAME: &str = "jbi/Internal/io/out::println(Ljava/lang/String;)V";
+    const JBI_PRINT_INT_NAME: &str = "jbi/Internal/io/out::println(I)V";
+    stdout_stream.add_virtual("println(Ljava/lang/String;)V", JBI_PRINT_STRING_NAME);
+    stdout_stream.add_virtual("println(I)V", JBI_PRINT_INT_NAME);
     let stdout_stream = exec_env.insert_class(stdout_stream).unwrap();
-    let jbi_stdio_println_impl_method = exec_env.lookup_method(JBI_PRINTLN_IMPL_NAME).unwrap();
-    exec_env.replace_method_with_extern(jbi_stdio_println_impl_method, STDIO_PRINTLN_IMPL);
+    let jbi_stdout_print_int = exec_env.lookup_method(JBI_PRINT_INT_NAME).unwrap();
+    exec_env.replace_method_with_extern(jbi_stdout_print_int, StdoutPrintlnInt);
+    let jbi_stdoutprintlnimpl_method = exec_env.lookup_method(JBI_PRINT_STRING_NAME).unwrap();
+    exec_env.replace_method_with_extern(jbi_stdoutprintlnimpl_method, StdoutPrintlnString);
 
     let mut system = FatClass::new("java/lang/System", "java/lang/Object"); 
     system.add_static("out", FieldType::ObjectRef);

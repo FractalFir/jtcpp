@@ -2,6 +2,7 @@ pub(crate) mod baseir;
 pub(crate) mod class;
 pub(crate) mod fatclass;
 pub(crate) mod fatops;
+pub(crate) mod base_runner;
 use crate::importer::ImportedJavaClass;
 use crate::ObjectRef;
 use crate::{IString, Value};
@@ -96,6 +97,12 @@ impl<'env> ExecCtx<'env> {
     pub fn get_array_length(&self, arrref: ObjectRef) -> usize {
         unsafe { EnvMemory::get_array_length(self.memory.get(), arrref) }
     }
+    pub fn set_array_at(&mut self, arrref: ObjectRef,index:usize,value:Value){
+        unsafe { EnvMemory::set_array_at(self.memory.get(), arrref,index,value) }
+    }
+    pub fn get_array_at(&mut self, arrref: ObjectRef,index:usize)->Value{
+        unsafe { EnvMemory::get_array_at(self.memory.get(), arrref,index) }
+    }
     pub fn get_local(&self, id: u8) -> Option<Value> {
         Some(unsafe {
             **self
@@ -112,9 +119,12 @@ impl<'env> ExecCtx<'env> {
     fn get_static(&self, id: usize) -> Value {
         unsafe { EnvMemory::get_static(self.memory.get(), id) }
     }
+    fn put_static(&self, id: usize,value:Value) {
+        unsafe { EnvMemory::put_static(self.memory.get(), id, value) }
+    }
     fn stack_push(&mut self, value: Value) {
         assert_ne!(value, Value::Void);
-        println!("stack_push:{value:?}");
+        //println!("stack_push:{value:?}");
         self.data.push(value);
     }
     fn stack_pop(&mut self) -> Option<Value> {

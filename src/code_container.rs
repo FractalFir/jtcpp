@@ -131,7 +131,11 @@ impl CodeContainer {
     }
     pub(crate) fn diagnose_method(&self,method_id:usize){
             let name = self.method_name(method_id).unwrap();
-            let dep = self.method_dependency(method_id).unwrap();
+            let dep = if let Some(dep) = self.method_dependency(method_id){dep}
+            else{
+                println!("method with name {name} and ID {method_id} is missing.");
+                return;
+            };
             println!("method with name {name} and ID {method_id} is missing, because it depends on {dep}!");
             let mut dep = dep;
             //let mut limiter = 0;

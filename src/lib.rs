@@ -36,12 +36,12 @@ impl Method {
     fn call(&self, ctx: ExecCtx) -> Result<Value, ExecException> {
         match self {
             Self::Invokable(invokable) => invokable.call(ctx),
-            Method::BaseIR { ops } => executor::baseir::call(ops, ctx),
+            Method::BaseIR { ops } => executor::base_runner::call(ops, ctx),
         }
     }
 }
 #[derive(Clone, Copy, Debug, PartialEq)]
-enum Value {
+pub enum Value {
     Void,
     Byte(i8),
     Short(i16),
@@ -98,6 +98,20 @@ impl Object {
         match self {
             Self::Array { values, .. } => values.len(),
             _ => 0,
+        }
+    }
+    pub(crate) fn set_array_at(&mut self,index:usize,value:Value){
+        match self{
+            Self::Object{..}=>(),
+            Self::Array{values}=>values[index] = value,
+            Self::String(_)=>todo!("Can't index into strings yet!"),
+        }
+    }
+    pub(crate) fn get_array_at(&mut self,index:usize)->Value{
+        match self{
+            Self::Object{..}=>panic!("This is an object, so it can't be indexed into like an array!"),
+            Self::Array{values}=>values[index],
+            Self::String(_)=>todo!("Can't index into strings yet!"),
         }
     }
     pub fn to_string(&self) -> Option<IString> {
@@ -170,11 +184,27 @@ impl EnvMemory {
         drop(lock);
         val
     }
+    fn put_static(this: *mut Self, index: StaticRef,value: Value){
+        let lock = unsafe { (*this).lock.lock().expect("poisoned mutex!") };
+        unsafe { (*this).statics[index]  = value};
+        drop(lock);
+    }
     pub(crate) fn get_array_length(this: *const Self, obj_ref: ObjectRef) -> usize {
         let lock = unsafe { (*this).lock.lock().expect("poisoned mutex!") };
         let val = unsafe { (*this).objects[obj_ref].get_array_length() };
         drop(lock);
         val
+    }
+    pub(crate) fn set_array_at(this: *mut Self, arr_ref: ObjectRef,index:usize,value:Value){
+        let lock = unsafe { (*this).lock.lock().expect("poisoned mutex!") };
+        unsafe { (*this).objects[arr_ref].set_array_at(index,value) };
+        drop(lock);
+    }
+    pub(crate) fn get_array_at(this: *mut Self, arr_ref: ObjectRef,index:usize)->Value{
+        let lock = unsafe { (*this).lock.lock().expect("poisoned mutex!") };
+        let value = unsafe { (*this).objects[arr_ref].get_array_at(index) };
+        drop(lock);
+        value
     }
     pub(crate) fn get_field(
         this: *const Self,
@@ -211,7 +241,7 @@ impl EnvMemory {
         }
     }
 }
-struct ExecEnv {
+pub struct ExecEnv {
     code_container: CodeContainer,
     env_mem: EnvMemory,
     //objects:Vec<Option<Object>>
@@ -275,9 +305,15 @@ impl ExecEnv {
     pub(crate) fn get_field(&self,class_id:ClassRef,field_name:&str)->Option<(FieldRef, &FieldType)>{
         self.code_container.get_field(class_id,field_name)
     }
+    /// Searches for method named main, which returns void and accepts an array of strings. this function may also be provided with
+    /// an optional hint, eg. name of the class the desired method resides in. It will either return first method it finds,
+    /// or None, if no method matches all requirements.
+    /// (**WARNING!** If two or more methods fullfill all requirements, it may return any method that fullfills all requirements. 
+    /// There is **no guarantee** that this will be consistent between **runs of the same program**).
+    /// Class paths in optional hint should be internal java paths, eg. `java/lang/Object` instead of `java.lang.Object`.
     pub fn try_find_main(&self,hint:Option<&str>)->Option<MethodRef>{
         for (name,id) in self.code_container.method_names(){
-            if name.contains("Main::main([Ljava/lang/String;)V"){
+            if name.contains("::main([Ljava/lang/String;)V"){
                 if let Some(hint) = hint{
                     if name.contains(hint){
                         return Some(*id);
@@ -377,6 +413,8 @@ impl ExecEnv {
                 obj_ref
             })
     }
+    /// Creates a new [`ExecEnv`] with a small, essential part of stdlib already present.
+    /// Call [`Self::insert_stdlib`] to add the rest of suported parts of the standard library.
     pub fn new() -> Self {
         use crate::executor::FieldType;
         let env_mem = EnvMemory::new();
@@ -629,7 +667,7 @@ impl ExecEnv {
     
     pub fn call_method(
         &mut self,
-        method_id: usize,
+        method_id: MethodRef,
         args: &[Value],
     ) -> Result<Value, ExecException> {
         let args: Vec<_> = args.into();
@@ -652,8 +690,17 @@ impl ExecEnv {
     pub fn insert_stdlib(&mut self) {
         stdlib::insert_all(self);
     }
-    pub fn load_jar<R:std::io::Read + std::io::Seek>(jar:&mut R,prefix:Option<&str>){
-        todo!();
+    pub fn import_jar<R:std::io::Read + std::io::Seek>(&mut self,jar:&mut R)->Result<(),crate::importer::BytecodeImportError>{
+        let classes =  importer::load_jar(jar)?;
+        for class in classes{  
+            self.load_class(class);
+        }
+        Ok(())
+    }
+    pub fn import_class<R:std::io::Read>(&mut self,jar:&mut R)->Result<(),crate::importer::BytecodeImportError>{
+        let class = importer::load_class(jar)?;
+        self.load_class(class);
+        Ok(())
     }
 }
 //trait SimpleARG{};
@@ -663,7 +710,7 @@ impl<T: Fn()> Invokable for T {
     }
 }
 #[derive(Debug)]
-enum ExecException {
+pub enum ExecException {
     MethodNotFound,
 }
 #[test]
