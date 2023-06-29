@@ -221,7 +221,10 @@ pub(crate) enum FatOp {
     Throw,
     MonitorEnter,
     MonitorExit,
-    LookupSwitch{default_op:usize,pairs:Box<[(i32,usize)]>}
+    LookupSwitch {
+        default_op: usize,
+        pairs: Box<[(i32, usize)]>,
+    },
 }
 pub(crate) fn find_op_with_offset(ops: &[(OpCode, u16)], idx: u16) -> Option<usize> {
     for (current, op) in ops.iter().enumerate() {
@@ -300,7 +303,7 @@ pub(crate) fn expand_ops(ops: &[(OpCode, u16)], class: &ImportedJavaClass) -> Bo
             OpCode::IXOr => FatOp::IXOr,
             OpCode::LXOr => FatOp::LXOr,
             OpCode::INeg => FatOp::INeg,
-            OpCode::LNeg => FatOp::LNeg,   
+            OpCode::LNeg => FatOp::LNeg,
             OpCode::DNeg => FatOp::DNeg,
             OpCode::FNeg => FatOp::FNeg,
             OpCode::L2I => FatOp::L2I,
@@ -458,9 +461,9 @@ pub(crate) fn expand_ops(ops: &[(OpCode, u16)], class: &ImportedJavaClass) -> Bo
                 let class_name = class.lookup_class(*index).unwrap();
                 FatOp::ANewArray(class_name.into())
             }
-            OpCode::MultiANewArray(index,dimensions) => {
+            OpCode::MultiANewArray(index, dimensions) => {
                 let class_name = class.lookup_class(*index).unwrap();
-                FatOp::MultiANewArray(class_name.into(),*dimensions)
+                FatOp::MultiANewArray(class_name.into(), *dimensions)
             }
             OpCode::NewArray(typeid) => match *typeid {
                 4 => FatOp::ZNewArray,
@@ -554,16 +557,19 @@ pub(crate) fn expand_ops(ops: &[(OpCode, u16)], class: &ImportedJavaClass) -> Bo
             OpCode::Throw => FatOp::Throw,
             OpCode::MonitorEnter => FatOp::MonitorEnter,
             OpCode::MonitorExit => FatOp::MonitorExit,
-            OpCode::LookupSwitch(switch) =>{
+            OpCode::LookupSwitch(switch) => {
                 let default_offset: u16 = (op.1 as i32 + switch.default_offset as i32) as u16;
                 let default_op = find_op_with_offset(ops, default_offset).unwrap();
                 let mut pairs = Vec::with_capacity(switch.pairs.len());
-                for (key,offset) in switch.pairs.iter(){
+                for (key, offset) in switch.pairs.iter() {
                     let offset: u16 = (op.1 as i32 + *offset as i32) as u16;
-                    let op = find_op_with_offset(ops, offset).unwrap(); 
-                    pairs.push((*key,op));
+                    let op = find_op_with_offset(ops, offset).unwrap();
+                    pairs.push((*key, op));
                 }
-                FatOp::LookupSwitch{default_op,pairs:pairs.into()}
+                FatOp::LookupSwitch {
+                    default_op,
+                    pairs: pairs.into(),
+                }
             }
             _ => todo!("can't expand op {op:?}"),
         };

@@ -1,8 +1,8 @@
+pub(crate) mod base_runner;
 pub(crate) mod baseir;
 pub(crate) mod class;
 pub(crate) mod fatclass;
 pub(crate) mod fatops;
-pub(crate) mod base_runner;
 use crate::importer::ImportedJavaClass;
 use crate::ObjectRef;
 use crate::{IString, Value};
@@ -10,13 +10,13 @@ use core::ptr::NonNull;
 #[derive(Debug)]
 pub(crate) enum UnmetDependency {
     NeedsClass(IString),
-    MissingField(IString,IString),
+    MissingField(IString, IString),
 }
 impl UnmetDependency {
     pub(crate) fn dependency(&self) -> &str {
         match self {
             Self::NeedsClass(class) => class,
-            Self::MissingField(class,_fname) => class,
+            Self::MissingField(class, _fname) => class,
         }
     }
 }
@@ -48,7 +48,7 @@ impl FieldType {
         }
     }
 }
-pub(crate) fn field_desc_str_to_ftype(desc_str:&str,th:usize)  -> FieldType {
+pub(crate) fn field_desc_str_to_ftype(desc_str: &str, th: usize) -> FieldType {
     match desc_str.chars().nth(th).unwrap() {
         'B' => FieldType::Byte,
         'C' => FieldType::Char,
@@ -64,7 +64,7 @@ pub(crate) fn field_desc_str_to_ftype(desc_str:&str,th:usize)  -> FieldType {
 }
 pub(crate) fn field_descriptor_to_ftype(descriptor: u16, class: &ImportedJavaClass) -> FieldType {
     let descriptor = class.lookup_utf8(descriptor).unwrap();
-    field_desc_str_to_ftype(descriptor,0)
+    field_desc_str_to_ftype(descriptor, 0)
 }
 use crate::{CodeContainer, EnvMemory, ExecException};
 use core::cell::UnsafeCell;
@@ -97,11 +97,11 @@ impl<'env> ExecCtx<'env> {
     pub fn get_array_length(&self, arrref: ObjectRef) -> usize {
         unsafe { EnvMemory::get_array_length(self.memory.get(), arrref) }
     }
-    pub fn set_array_at(&mut self, arrref: ObjectRef,index:usize,value:Value){
-        unsafe { EnvMemory::set_array_at(self.memory.get(), arrref,index,value) }
+    pub fn set_array_at(&mut self, arrref: ObjectRef, index: usize, value: Value) {
+        unsafe { EnvMemory::set_array_at(self.memory.get(), arrref, index, value) }
     }
-    pub fn get_array_at(&mut self, arrref: ObjectRef,index:usize)->Value{
-        unsafe { EnvMemory::get_array_at(self.memory.get(), arrref,index) }
+    pub fn get_array_at(&mut self, arrref: ObjectRef, index: usize) -> Value {
+        unsafe { EnvMemory::get_array_at(self.memory.get(), arrref, index) }
     }
     pub fn get_local(&self, id: u8) -> Option<Value> {
         Some(unsafe {
@@ -119,7 +119,7 @@ impl<'env> ExecCtx<'env> {
     fn get_static(&self, id: usize) -> Value {
         unsafe { EnvMemory::get_static(self.memory.get(), id) }
     }
-    fn put_static(&self, id: usize,value:Value) {
+    fn put_static(&self, id: usize, value: Value) {
         unsafe { EnvMemory::put_static(self.memory.get(), id, value) }
     }
     fn stack_push(&mut self, value: Value) {
@@ -193,14 +193,11 @@ impl<'env> ExecCtx<'env> {
         //println!("Invoking {method_id}");
 
         let method = self.code_container.get_method(method_id);
-        let method_ref = method
-            .ok_or(ExecException::MethodNotFound)?
-            .as_ref();
-        if let Some(method) = method_ref{
+        let method_ref = method.ok_or(ExecException::MethodNotFound)?.as_ref();
+        if let Some(method) = method_ref {
             let method = |ctx| method.call(ctx);
             self.call(args, 10, method)
-        }
-        else{
+        } else {
             self.code_container.diagnose_method(method_id);
             Err(ExecException::MethodNotFound)
         }

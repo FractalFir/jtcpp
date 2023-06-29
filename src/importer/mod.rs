@@ -153,7 +153,7 @@ pub(crate) struct ImportedJavaClass {
     attributes: Box<[Attribute]>, //field_names: Box<[IString]>,
 }
 impl ImportedJavaClass {
-    pub(crate) fn interfaces(&self)->&[u16]{
+    pub(crate) fn interfaces(&self) -> &[u16] {
         &self.interfaces
     }
     pub(crate) fn lookup_invoke_dynamic(&self, dynamic: u16) -> Option<(u16, u16)> {

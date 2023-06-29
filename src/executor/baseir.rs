@@ -130,7 +130,7 @@ pub(crate) enum BaseIR {
     CheckedCast(ClassRef),
     InstanceOf(ClassRef),
     ANewArray(ClassRef),
-    MultiANewArray(ClassRef,u8),
+    MultiANewArray(ClassRef, u8),
     MultiBNewArray(u8),
     MultiCNewArray(u8),
     MultiDNewArray(u8),
@@ -190,8 +190,9 @@ pub(crate) enum BaseIR {
     LookupSwitch(Box<LookupSwitch>),
 }
 #[derive(Debug)]
-pub(crate) struct LookupSwitch{
-    default_op:usize,pairs:Box<[(i32,usize)]>
+pub(crate) struct LookupSwitch {
+    default_op: usize,
+    pairs: Box<[(i32, usize)]>,
 }
 fn lookup_static(
     class_name: &str,
@@ -204,11 +205,14 @@ fn lookup_static(
     } else {
         return Err(UnmetDependency::NeedsClass(class_name.into()));
     };
-    if let Some(static_id) = exec_env.get_static(class_id,field_name) {
+    if let Some(static_id) = exec_env.get_static(class_id, field_name) {
         Ok(static_id)
     } else {
         println!("{class_name} does not have static field {field_name}! Skipping this method to try and run anyway!");
-        Err(UnmetDependency::MissingField(class_name.into(),field_name.into()))
+        Err(UnmetDependency::MissingField(
+            class_name.into(),
+            field_name.into(),
+        ))
     }
 }
 fn lookup_field(
@@ -222,9 +226,7 @@ fn lookup_field(
     } else {
         return Err(UnmetDependency::NeedsClass(class_name.into()));
     };
-    if let Some((field_id,_ftype)) =
-        exec_env.get_field(class_id,field_name)
-    {
+    if let Some((field_id, _ftype)) = exec_env.get_field(class_id, field_name) {
         Ok(field_id)
     } else {
         panic!("Can't find field {field_name} on {class_name}!");
@@ -345,7 +347,7 @@ pub(crate) fn into_base(
                 } else {
                     return Err(UnmetDependency::NeedsClass(class_name.clone()));
                 };
-                let virtual_index = exec_env.lookup_virtual(class_id,method).unwrap();
+                let virtual_index = exec_env.lookup_virtual(class_id, method).unwrap();
                 BaseIR::InvokeVirtual(virtual_index, *argc)
             }
             FatOp::AGetField(class_name, field_name) => {
@@ -492,21 +494,22 @@ pub(crate) fn into_base(
                 let static_id = lookup_static(class_name, field_name, exec_env)?;
                 BaseIR::ZPutStatic(static_id)
             }
-            FatOp::MultiANewArray(type_name,dimensions) => {
+            FatOp::MultiANewArray(type_name, dimensions) => {
                 use super::FieldType;
                 use crate::executor::field_desc_str_to_ftype;
-                let ftype = field_desc_str_to_ftype(type_name,*dimensions as usize);
-                match ftype{
+                let ftype = field_desc_str_to_ftype(type_name, *dimensions as usize);
+                match ftype {
                     FieldType::ObjectRef => {
-                        let class_name = &type_name[(*dimensions as usize + 1)..(type_name.len() - 1)];
+                        let class_name =
+                            &type_name[(*dimensions as usize + 1)..(type_name.len() - 1)];
                         let class_id = exec_env.code_container.lookup_class(class_name);
                         let class_id = if let Some(class_id) = class_id {
                             class_id
                         } else {
                             return Err(UnmetDependency::NeedsClass(class_name.into()));
                         };
-                        BaseIR::MultiANewArray(class_id,*dimensions)
-                    },
+                        BaseIR::MultiANewArray(class_id, *dimensions)
+                    }
                     FieldType::Byte => BaseIR::MultiBNewArray(*dimensions),
                     FieldType::Char => BaseIR::MultiCNewArray(*dimensions),
                     FieldType::Double => BaseIR::MultiDNewArray(*dimensions),
@@ -514,7 +517,7 @@ pub(crate) fn into_base(
                     FieldType::Int => BaseIR::MultiINewArray(*dimensions),
                     FieldType::Short => BaseIR::MultiSNewArray(*dimensions),
                     FieldType::Long => BaseIR::MultiLNewArray(*dimensions),
-                    _=> todo!("unhandled multi array type {ftype:?}"),
+                    _ => todo!("unhandled multi array type {ftype:?}"),
                 }
             }
             FatOp::New(class_name) => {
@@ -603,8 +606,11 @@ pub(crate) fn into_base(
             FatOp::MonitorEnter => BaseIR::MonitorEnter,
             FatOp::MonitorExit => BaseIR::MonitorExit,
             FatOp::Throw => BaseIR::Throw,
-            FatOp::LookupSwitch{default_op,pairs}=>{
-                BaseIR::LookupSwitch(Box::new(LookupSwitch{default_op:*default_op,pairs:pairs.clone()}))
+            FatOp::LookupSwitch { default_op, pairs } => {
+                BaseIR::LookupSwitch(Box::new(LookupSwitch {
+                    default_op: *default_op,
+                    pairs: pairs.clone(),
+                }))
             }
             //TEMPORARY!
             FatOp::InvokeDynamic => BaseIR::Invalid,

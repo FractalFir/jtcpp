@@ -96,7 +96,8 @@ pub(crate) fn finalize(class: &FatClass, env: &mut ExecEnv) -> Result<Class, Unm
     } else {
         return Err(UnmetDependency::NeedsClass(super_name.into()));
     };
-    let mut statics_map: HashMap<IString, usize> = env.get_class_statics_map(super_class).unwrap().clone();
+    let mut statics_map: HashMap<IString, usize> =
+        env.get_class_statics_map(super_class).unwrap().clone();
     //let mut statics = Vec::with_capacity(class.fields().len());
     for (static_name, ftype) in class.static_fields() {
         let static_id = env.env_mem.insert_static(ftype.default_value());
@@ -121,28 +122,31 @@ pub(crate) fn finalize(class: &FatClass, env: &mut ExecEnv) -> Result<Class, Unm
             if virtual_methods.len() <= *id {
                 println!("VMethod with invalid vid! Method comes from super class {super_name}, and is named {virtual_method} it's vi is: {id}.
                     Inserting 'InvalidMethod' to try and go forward anyway.");
-            }
-            else{
+            } else {
                 virtual_methods[*id] = env.code_container.lookup_or_insert_method(real_method);
-            }  
+            }
         } else {
             virtual_methods.push(env.code_container.lookup_or_insert_method(real_method));
             virtual_map.insert(virtual_method.to_owned(), virtual_methods.len() - 1);
         }
     }
-    
+
     let class_id = 0;
     //TODO: Save info about real methods implementing an inteface.
-    for interface_name in class.interfaces(){
+    for interface_name in class.interfaces() {
         let interface_class = env.code_container.lookup_class(interface_name);
         let interface_class = if let Some(interface_class) = interface_class {
-        interface_class
+            interface_class
         } else {
             return Err(UnmetDependency::NeedsClass(interface_name.clone()));
         };
-        let interface_vmap: HashMap<IString, usize> = env.get_class_virtual_map(interface_class).unwrap().into();
-        let interface_vmethods: Vec<usize> = env.get_class_virtual_methods(interface_class).unwrap().into(); 
-        for (name,vid) in interface_vmap.iter(){
+        let interface_vmap: HashMap<IString, usize> =
+            env.get_class_virtual_map(interface_class).unwrap().into();
+        let interface_vmethods: Vec<usize> = env
+            .get_class_virtual_methods(interface_class)
+            .unwrap()
+            .into();
+        for (name, vid) in interface_vmap.iter() {
             virtual_map.entry(name.clone()).or_insert_with(||{
                 if let Some(real_method) = interface_vmethods.get(*vid){
                     *real_method

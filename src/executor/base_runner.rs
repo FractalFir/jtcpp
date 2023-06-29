@@ -1,7 +1,7 @@
 use crate::BaseIR;
 use crate::ExecCtx;
-use crate::Value;
 use crate::ExecException;
+use crate::Value;
 pub(crate) fn call<'caller, 'env>(ops: &[BaseIR], mut ctx: ExecCtx) -> Result<Value, ExecException>
 where
     'caller: 'env,
@@ -134,18 +134,18 @@ where
             }
             BaseIR::APutStatic(index) => {
                 let val = ctx.stack_pop().unwrap();
-                ctx.put_static(*index,val);
+                ctx.put_static(*index, val);
             }
-            BaseIR::BAStore=>{
+            BaseIR::BAStore => {
                 let value = ctx.stack_pop().unwrap();
                 let index = ctx.stack_pop().unwrap().as_int().unwrap();
                 let array_ref = ctx.stack_pop().unwrap().as_objref().unwrap();
-                ctx.set_array_at(array_ref,index as usize,value);
+                ctx.set_array_at(array_ref, index as usize, value);
             }
-            BaseIR::BALoad=>{
+            BaseIR::BALoad => {
                 let index = ctx.stack_pop().unwrap().as_int().unwrap();
                 let array_ref = ctx.stack_pop().unwrap().as_objref().unwrap();
-                let value = ctx.get_array_at(array_ref,index as usize);
+                let value = ctx.get_array_at(array_ref, index as usize);
                 ctx.stack_push(value);
             }
             BaseIR::IReturn | BaseIR::FReturn | BaseIR::AReturn => {
@@ -177,10 +177,10 @@ where
                     ctx.stack_push(res)
                 };
             }
-            BaseIR::IInc(variable,inc)=>{
+            BaseIR::IInc(variable, inc) => {
                 let prev = ctx.get_local(*variable).unwrap();
                 let next = prev.as_int().unwrap() + *inc as i32;
-                ctx.set_local(*variable,Value::Int(next));
+                ctx.set_local(*variable, Value::Int(next));
             }
             BaseIR::InvokeVirtual(method_id, argc) => {
                 let mut args: Box<[Value]> = (0..*argc).map(|_| ctx.stack_pop().unwrap()).collect();
@@ -205,12 +205,12 @@ where
             }
             BaseIR::IfZero(jump_index) => {
                 let a = ctx.stack_pop().unwrap().as_int().unwrap();
-                if a == 0{
+                if a == 0 {
                     op_index = *jump_index;
                     continue;
                 }
             }
-            BaseIR::GoTo(jump_index)=>{
+            BaseIR::GoTo(jump_index) => {
                 op_index = *jump_index;
                 continue;
             }

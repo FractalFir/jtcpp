@@ -1,4 +1,4 @@
-use super::{load_i16, load_i8, load_u16, load_u8,load_i32};
+use super::{load_i16, load_i32, load_i8, load_u16, load_u8};
 #[derive(Debug, Clone)]
 pub(crate) enum OpCode {
     Nop,
@@ -149,10 +149,10 @@ pub(crate) enum OpCode {
     LookupSwitch(Box<LookupSwitch>),
 }
 ///Separate to decrease footprint of individual OP.
- #[derive(Debug,Clone)]
-pub(crate) struct LookupSwitch{
-    pub(crate) default_offset:i32,
-    pub(crate) pairs:Box<[(i32,i32)]>,
+#[derive(Debug, Clone)]
+pub(crate) struct LookupSwitch {
+    pub(crate) default_offset: i32,
+    pub(crate) pairs: Box<[(i32, i32)]>,
 }
 impl OpCode {
     //Checks if op is a valid method terminator(return or throw, or GoTo that goes back).
@@ -174,7 +174,7 @@ pub(crate) fn load_ops<R: std::io::Read>(
     src: &mut R,
     code_length: u32,
 ) -> Result<Vec<(OpCode, u16)>, std::io::Error> {
-    let mut curr_offset:u16 = 0;
+    let mut curr_offset: u16 = 0;
 
     let mut ops = Vec::with_capacity(code_length as usize);
     //println!("\nMethod begin\n");
@@ -436,9 +436,9 @@ pub(crate) fn load_ops<R: std::io::Read>(
                 OpCode::GoTo(offset)
             }
             0xab => {
-                let to_next = ((4 - curr_offset % 4)%4) as usize;
+                let to_next = ((4 - curr_offset % 4) % 4) as usize;
                 /// skip to_next
-                let mut out = [0;4];
+                let mut out = [0; 4];
                 src.read_exact(&mut out[..to_next])?;
                 curr_offset += to_next as u16;
                 assert_eq!(curr_offset % 4, 0);
@@ -447,16 +447,16 @@ pub(crate) fn load_ops<R: std::io::Read>(
                 let npairs = load_i32(src)?;
                 curr_offset += 4;
                 let mut pairs = Vec::with_capacity(npairs as usize);
-                for _ in 0..npairs{
+                for _ in 0..npairs {
                     let value_match = load_i32(src)?;
                     curr_offset += 4;
                     let offset = load_i32(src)?;
                     curr_offset += 4;
-                    pairs.push((value_match,offset));
+                    pairs.push((value_match, offset));
                 }
-                OpCode::LookupSwitch(Box::new(LookupSwitch{
+                OpCode::LookupSwitch(Box::new(LookupSwitch {
                     default_offset,
-                    pairs:pairs.into(),
+                    pairs: pairs.into(),
                 }))
             }
             0xaa => {

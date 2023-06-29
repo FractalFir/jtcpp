@@ -11,7 +11,7 @@ pub(crate) struct FatClass {
     static_fields: Vec<(IString, FieldType)>,
 }
 impl FatClass {
-    pub(crate) fn interfaces(&self) -> &[IString]{
+    pub(crate) fn interfaces(&self) -> &[IString] {
         &self.interfaces
     }
     pub(crate) fn add_virtual(&mut self, virtual_partialy_mangled: &str, method_mangled: &str) {
@@ -31,7 +31,7 @@ impl FatClass {
             fields: Vec::new(),
             virtuals: Vec::new(),
             static_fields: Vec::new(),
-            interfaces:Vec::new(),
+            interfaces: Vec::new(),
         }
     }
     pub(crate) fn class_name(&self) -> &str {
@@ -67,9 +67,9 @@ pub(crate) fn expand_class(class: &ImportedJavaClass) -> FatClass {
             virtuals.push((virtual_name, real_name));
         }
     }
-    let mut interfaces:Vec<IString> = Vec::with_capacity(class.interfaces().len());
+    let mut interfaces: Vec<IString> = Vec::with_capacity(class.interfaces().len());
     //println!("interfaces beg");
-    for interface in class.interfaces(){
+    for interface in class.interfaces() {
         let iface_class = class.lookup_class(*interface).unwrap();
         interfaces.push(iface_class.into());
         //println!("interface:{interface} iface_class:{iface_class}");
