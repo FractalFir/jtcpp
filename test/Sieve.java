@@ -11,6 +11,9 @@ public class Sieve{
     }
     static void Run(){  
         for(int curr_prime = 2; curr_prime < numbers.length; curr_prime++){
+          if(!numbers[curr_prime]){
+            continue;
+          }
           for(int i = curr_prime*2; i < numbers.length; i+= curr_prime){
               numbers[i] = false; 
           }

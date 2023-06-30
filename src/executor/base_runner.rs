@@ -205,7 +205,7 @@ where
             }
             BaseIR::IfZero(jump_index) => {
                 let a = ctx.stack_pop().unwrap().as_int().unwrap();
-                if a == 0 {
+                if a != 0 {
                     op_index = *jump_index;
                     continue;
                 }
