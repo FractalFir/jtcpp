@@ -20,4 +20,11 @@ public class BasicArthm{
     int dif = sum - mul;
     return ((dif%sum) + mul)/mul;
   }
+  public static int Factorial(int n){
+    int res = 1;
+    for(int curr = 2; curr < n; curr++){
+        res *= curr;
+    }
+    return res;
+  }
 }
