@@ -1,9 +1,9 @@
-use super::{field_descriptor_to_ftype, FieldType};
+use super::{field_descriptor_to_ftype, VariableType};
 use crate::importer::{opcodes::OpCode, ImportedJavaClass};
 use crate::IString;
 use smallvec::*;
 use crate::{mangle_method_name, mangle_method_name_partial, method_desc_to_argc};
-fn fieldref_to_info(index: u16, class: &ImportedJavaClass) -> (FieldType, IString, IString) {
+fn fieldref_to_info(index: u16, class: &ImportedJavaClass) -> (VariableType, IString, IString) {
     let (field_class, nametype) = class.lookup_filed_ref(index).unwrap();
     let field_class = class.lookup_class(field_class).unwrap();
     let (name, descriptor) = class.lookup_nametype(nametype).unwrap();
@@ -364,46 +364,46 @@ pub(crate) fn expand_ops(ops: &[(OpCode, u16)], class: &ImportedJavaClass) -> Bo
             OpCode::GetStatic(index) => {
                 let (ftype, class_name, field_name) = fieldref_to_info(*index, class);
                 match ftype {
-                    FieldType::Bool => FatOp::ZGetStatic(class_name, field_name),
-                    FieldType::Byte => FatOp::BGetStatic(class_name, field_name),
-                    FieldType::Short => FatOp::SGetStatic(class_name, field_name),
-                    FieldType::Char => FatOp::CGetStatic(class_name, field_name),
-                    FieldType::Int => FatOp::IGetStatic(class_name, field_name),
-                    FieldType::Long => FatOp::LGetStatic(class_name, field_name),
-                    FieldType::Float => FatOp::FGetStatic(class_name, field_name),
-                    FieldType::Double => FatOp::DGetStatic(class_name, field_name),
-                    FieldType::ObjectRef{name} => FatOp::AGetStatic{class_name, field_name,type_name:name},
-                    FieldType::ArrayRef(_) => todo!("Getting array statics is not suported yet!"),
+                    VariableType::Bool => FatOp::ZGetStatic(class_name, field_name),
+                    VariableType::Byte => FatOp::BGetStatic(class_name, field_name),
+                    VariableType::Short => FatOp::SGetStatic(class_name, field_name),
+                    VariableType::Char => FatOp::CGetStatic(class_name, field_name),
+                    VariableType::Int => FatOp::IGetStatic(class_name, field_name),
+                    VariableType::Long => FatOp::LGetStatic(class_name, field_name),
+                    VariableType::Float => FatOp::FGetStatic(class_name, field_name),
+                    VariableType::Double => FatOp::DGetStatic(class_name, field_name),
+                    VariableType::ObjectRef{name} => FatOp::AGetStatic{class_name, field_name,type_name:name},
+                    VariableType::ArrayRef(_) => todo!("Getting array statics is not suported yet!"),
                 }
             }
             OpCode::PutStatic(index) => {
                 let (ftype, class_name, field_name) = fieldref_to_info(*index, class);
                 match ftype {
-                    FieldType::Bool => FatOp::ZPutStatic(class_name, field_name),
-                    FieldType::Byte => FatOp::BPutStatic(class_name, field_name),
-                    FieldType::Short => FatOp::SPutStatic(class_name, field_name),
-                    FieldType::Char => FatOp::CPutStatic(class_name, field_name),
-                    FieldType::Int => FatOp::IPutStatic(class_name, field_name),
-                    FieldType::Long => FatOp::LPutStatic(class_name, field_name),
-                    FieldType::Float => FatOp::FPutStatic(class_name, field_name),
-                    FieldType::Double => FatOp::DPutStatic(class_name, field_name),
-                    FieldType::ObjectRef{name} => FatOp::APutStatic{class_name, field_name,type_name:name},
-                    FieldType::ArrayRef(_) => todo!("Setting array statics is not suported yet!"),
+                    VariableType::Bool => FatOp::ZPutStatic(class_name, field_name),
+                    VariableType::Byte => FatOp::BPutStatic(class_name, field_name),
+                    VariableType::Short => FatOp::SPutStatic(class_name, field_name),
+                    VariableType::Char => FatOp::CPutStatic(class_name, field_name),
+                    VariableType::Int => FatOp::IPutStatic(class_name, field_name),
+                    VariableType::Long => FatOp::LPutStatic(class_name, field_name),
+                    VariableType::Float => FatOp::FPutStatic(class_name, field_name),
+                    VariableType::Double => FatOp::DPutStatic(class_name, field_name),
+                    VariableType::ObjectRef{name} => FatOp::APutStatic{class_name, field_name,type_name:name},
+                    VariableType::ArrayRef(_) => todo!("Setting array statics is not suported yet!"),
                 }
             }
             OpCode::GetField(index) => {
                 let (ftype, class_name, field_name) = fieldref_to_info(*index, class);
                 match ftype {
-                    FieldType::Bool => FatOp::ZGetField(class_name, field_name),
-                    FieldType::Byte => FatOp::BGetField(class_name, field_name),
-                    FieldType::Short => FatOp::SGetField(class_name, field_name),
-                    FieldType::Char => FatOp::CGetField(class_name, field_name),
-                    FieldType::Int => FatOp::IGetField(class_name, field_name),
-                    FieldType::Long => FatOp::LGetField(class_name, field_name),
-                    FieldType::Float => FatOp::FGetField(class_name, field_name),
-                    FieldType::Double => FatOp::DGetField(class_name, field_name),
-                    FieldType::ObjectRef{name}  => FatOp::AGetField{class_name, field_name,type_name:name},
-                    FieldType::ArrayRef(_) => todo!("Getting array fields is not suported yet!"),
+                    VariableType::Bool => FatOp::ZGetField(class_name, field_name),
+                    VariableType::Byte => FatOp::BGetField(class_name, field_name),
+                    VariableType::Short => FatOp::SGetField(class_name, field_name),
+                    VariableType::Char => FatOp::CGetField(class_name, field_name),
+                    VariableType::Int => FatOp::IGetField(class_name, field_name),
+                    VariableType::Long => FatOp::LGetField(class_name, field_name),
+                    VariableType::Float => FatOp::FGetField(class_name, field_name),
+                    VariableType::Double => FatOp::DGetField(class_name, field_name),
+                    VariableType::ObjectRef{name}  => FatOp::AGetField{class_name, field_name,type_name:name},
+                    VariableType::ArrayRef(_) => todo!("Getting array fields is not suported yet!"),
                 }
             }
             OpCode::IfICmpEq(op_offset) => {
@@ -477,16 +477,16 @@ pub(crate) fn expand_ops(ops: &[(OpCode, u16)], class: &ImportedJavaClass) -> Bo
             OpCode::PutField(index) => {
                 let (ftype, class_name, field_name) = fieldref_to_info(*index, class);
                 match ftype {
-                    FieldType::Bool => FatOp::ZPutField(class_name, field_name),
-                    FieldType::Byte => FatOp::BPutField(class_name, field_name),
-                    FieldType::Short => FatOp::SPutField(class_name, field_name),
-                    FieldType::Char => FatOp::CPutField(class_name, field_name),
-                    FieldType::Int => FatOp::IPutField(class_name, field_name),
-                    FieldType::Long => FatOp::LPutField(class_name, field_name),
-                    FieldType::Float => FatOp::FPutField(class_name, field_name),
-                    FieldType::Double => FatOp::DPutField(class_name, field_name),
-                    FieldType::ObjectRef{name} => FatOp::APutField{class_name, field_name,type_name:name},
-                    FieldType::ArrayRef(_) => todo!("Setting array fields is not suported yet!"),
+                    VariableType::Bool => FatOp::ZPutField(class_name, field_name),
+                    VariableType::Byte => FatOp::BPutField(class_name, field_name),
+                    VariableType::Short => FatOp::SPutField(class_name, field_name),
+                    VariableType::Char => FatOp::CPutField(class_name, field_name),
+                    VariableType::Int => FatOp::IPutField(class_name, field_name),
+                    VariableType::Long => FatOp::LPutField(class_name, field_name),
+                    VariableType::Float => FatOp::FPutField(class_name, field_name),
+                    VariableType::Double => FatOp::DPutField(class_name, field_name),
+                    VariableType::ObjectRef{name} => FatOp::APutField{class_name, field_name,type_name:name},
+                    VariableType::ArrayRef(_) => todo!("Setting array fields is not suported yet!"),
                 }
             }
             OpCode::New(index) => {

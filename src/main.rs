@@ -1,8 +1,13 @@
 mod importer;
 mod fatops;
+mod basic_block;
 use crate::fatops::FatOp;
-use crate::importer::ImportedJavaClass;
+use std::io::Write;
+use crate::importer::{ImportedJavaClass,BytecodeImportError};
+use clap::Parser;
+use std::path::PathBuf;
 pub type IString = Box<str>;
+use basic_block::BasicBlock;
 fn class_path_to_class_mangled(class_path:&str)->IString{
     let mut out = String::with_capacity(class_path.len());
     let mut sequences = class_path.split('/');
@@ -29,7 +34,7 @@ fn mangle_method_name_partial(method: &str, desc: &str) -> IString {
     format!("{method}_meth_{desc}").into()
 }
 #[derive(Debug,Clone)]
-enum FieldType{
+enum VariableType{
     Char,
     Bool,
     Byte,
@@ -39,9 +44,9 @@ enum FieldType{
     Float,
     Double,
     ObjectRef{name: IString},
-    ArrayRef(Box<FieldType>),
+    ArrayRef(Box<VariableType>),
 }
-impl FieldType{
+impl VariableType{
     fn c_type(&self)->IString{
         match self{
             Self::Float=>"float".into(),
@@ -61,22 +66,22 @@ impl FieldType{
         }
     }
 }
-pub(crate) fn field_desc_str_to_ftype(desc_str: &str, th: usize) -> FieldType {
+pub(crate) fn field_desc_str_to_ftype(desc_str: &str, th: usize) -> VariableType {
     match desc_str.chars().nth(th).unwrap() {
-        'B' => FieldType::Byte,
-        'C' => FieldType::Char,
-        'D' => FieldType::Double,
-        'F' => FieldType::Float,
-        'I' => FieldType::Int,
-        'J' => FieldType::Long,
-        'L' => FieldType::ObjectRef { name: desc_str[(th+1)..(desc_str.len() - 1)].into() },
-        '[' => FieldType::ArrayRef(Box::new(field_desc_str_to_ftype(desc_str,th+1))),
-        'S' => FieldType::Short,
-        'Z' => FieldType::Bool,
+        'B' => VariableType::Byte,
+        'C' => VariableType::Char,
+        'D' => VariableType::Double,
+        'F' => VariableType::Float,
+        'I' => VariableType::Int,
+        'J' => VariableType::Long,
+        'L' => VariableType::ObjectRef { name: desc_str[(th+1)..(desc_str.len() - 1)].into() },
+        '[' => VariableType::ArrayRef(Box::new(field_desc_str_to_ftype(desc_str,th+1))),
+        'S' => VariableType::Short,
+        'Z' => VariableType::Bool,
         _ => panic!("Invalid field descriptor!\"{desc_str}\""),
     }
 }
-pub(crate) fn field_descriptor_to_ftype(descriptor: u16, class: &ImportedJavaClass) -> FieldType {
+pub(crate) fn field_descriptor_to_ftype(descriptor: u16, class: &ImportedJavaClass) -> VariableType {
     let descriptor = class.lookup_utf8(descriptor).unwrap();
     field_desc_str_to_ftype(descriptor, 0)
 }
@@ -125,8 +130,8 @@ fn method_desc_to_argc(desc: &str) -> u8 {
 struct Method{
     name:IString,
     ops:Box<[FatOp]>,
-    args:Vec<FieldType>,
-    ret_val:FieldType,
+    args:Vec<VariableType>,
+    ret_val:VariableType,
 }
 impl Method{
     fn into_bbs(&self)->Vec<(usize,BasicBlock)>{
@@ -147,12 +152,12 @@ impl Method{
         for (index,op) in self.ops.iter().enumerate(){
             println!("{index}:{op:?}");
             if jump_targets.contains(&index){
-                bbs.push((bb_beg,BasicBlock{input:Vec::new(),output:Vec::new(),beg_idx:bb_beg,ops:&self.ops[bb_beg..index]}));
+                bbs.push((bb_beg,BasicBlock::new(&self.ops[bb_beg..index],bb_beg)));
                 bb_beg = index;
             }
         }
         if bb_beg < self.ops.len(){
-            bbs.push((bb_beg,BasicBlock{input:Vec::new(),output:Vec::new(),beg_idx:bb_beg,ops:&self.ops[bb_beg..]}));
+            bbs.push((bb_beg,BasicBlock::new(&self.ops[bb_beg..],bb_beg)));
         }
         bbs.into()
     }
@@ -170,13 +175,7 @@ impl Method{
         cg.final_code()
     }
 }
-#[derive(Debug)]
-struct BasicBlock<'a>{
-    input:Vec<FieldType>,
-    output:Vec<FieldType>,
-    ops:&'a [FatOp],
-    beg_idx:usize,
-}
+
 use std::collections::{HashSet,HashMap};
 struct MethodCG{
     fn_name:IString,
@@ -187,7 +186,7 @@ struct MethodCG{
     code:String,
 }
 impl MethodCG{
-    fn ensure_exists(&mut self,varname:&str,vartype:&FieldType){
+    fn ensure_exists(&mut self,varname:&str,vartype:&VariableType){
         if !self.locals.contains(varname){
             let ctype = vartype.c_type();
             self.local_dec.push_str(&format!("\t{ctype} {varname};\n"));
@@ -198,7 +197,7 @@ impl MethodCG{
         self.code.push_str(&format!("\tbb_{beg_idx}:\n"));
         self.code.push_str(&code);
     }
-    fn new(args:&[FieldType],fn_name:&str,ret_val:FieldType)->Self{
+    fn new(args:&[VariableType],fn_name:&str,ret_val:VariableType)->Self{
         let mut sig = format!("{} {fn_name}(",ret_val.c_type());
         let mut arg_iter = args.iter().enumerate();
         match arg_iter.next(){
@@ -226,111 +225,19 @@ impl MethodCG{
         format!("{}{{\n{}{}}}",self.signature,self.local_dec,self.code).into()
     }
 }
-macro_rules! basic_op_impl{
-    ($vstack:ident,$cg:ident,$code:ident,$otype:literal,$op:literal) => {
-        {
-            let b = $vstack.pop().unwrap();
-            let a = $vstack.pop().unwrap();
-            let im_name = $cg.get_im_name();
-            $code.push_str(&format!(concat!("\t",$otype," {} = {} ",$op," {};\n"),im_name,a,b));
-            $vstack.push(im_name);
-        }
-    };
-}
-impl<'a> BasicBlock<'a>{
-    fn vstack(&self)->Vec<IString>{
-        Vec::new()
-    }
-    fn codegen(&self,cg:&mut MethodCG){
-        let mut vstack = self.vstack();
-        let mut code = String::new();
-        for op in self.ops.iter(){
-            match op{
-                FatOp::FLoad(index)=>{
-                    vstack.push(format!("loc{index}f").into());
-                }
-                FatOp::FMul=>basic_op_impl!(vstack,cg,code,"float","*"),
-                FatOp::FAdd=>basic_op_impl!(vstack,cg,code,"float","+"),
-                FatOp::FDiv=>basic_op_impl!(vstack,cg,code,"float","/"),
-                FatOp::FSub=>basic_op_impl!(vstack,cg,code,"float","-"),
-                FatOp::DMul=>basic_op_impl!(vstack,cg,code,"dobule","*"),
-                FatOp::DAdd=>basic_op_impl!(vstack,cg,code,"dobule","+"),
-                FatOp::DDiv=>basic_op_impl!(vstack,cg,code,"dobule","/"),
-                FatOp::DSub=>basic_op_impl!(vstack,cg,code,"dobule","-"),
-                FatOp::IMul=>basic_op_impl!(vstack,cg,code,"int","*"),
-                FatOp::IAdd=>basic_op_impl!(vstack,cg,code,"int","+"),
-                FatOp::IDiv=>basic_op_impl!(vstack,cg,code,"int","/"),
-                FatOp::IRem=>basic_op_impl!(vstack,cg,code,"int","%"),
-                FatOp::ISub=>basic_op_impl!(vstack,cg,code,"int","-"),
-                FatOp::LMul=>basic_op_impl!(vstack,cg,code,"long","*"),
-                FatOp::LAdd=>basic_op_impl!(vstack,cg,code,"long","+"),
-                FatOp::LDiv=>basic_op_impl!(vstack,cg,code,"long","/"),
-                FatOp::LSub=>basic_op_impl!(vstack,cg,code,"long","-"),
-                FatOp::FConst(float)=>{
-                    let im_name = cg.get_im_name();
-                    code.push_str(&format!("\tfloat {im_name} = {float};\n"));
-                    vstack.push(im_name);
-                },
-                FatOp::IConst(int)=>{
-                    let im_name = cg.get_im_name();
-                    code.push_str(&format!("\tint {im_name} = {int};\n"));
-                    vstack.push(im_name);
-                },
-                FatOp::ILoad(var_idx)=>{
-                    vstack.push(format!("loc{var_idx}i").into_boxed_str());
-                },
-                FatOp::IStore(var_idx)=>{
-                    let vname = format!("loc{var_idx}i").into_boxed_str();
-                    cg.ensure_exists(&vname,&FieldType::Int);
-                    let set = vstack.pop().unwrap();
-                    code.push_str(&format!("\t{vname} = {set};\n"));
-                },
-                FatOp::FReturn | FatOp::DReturn | FatOp::IReturn =>{
-                    let ret = vstack.pop().unwrap();
-                    code.push_str(&format!("\treturn {ret};\n"));
-                }
-                FatOp::IfNotZero(jump_pos)=>{
-                    let val = vstack.pop().unwrap();
-                    code.push_str(&format!("\tif({val} != 0)goto bb_{jump_pos};\n"));
-                }
-                FatOp::IfIGreterEqual(jump_pos)=>{
-                    let b = vstack.pop().unwrap();
-                    let a = vstack.pop().unwrap();
-                    code.push_str(&format!("\tif({a} >= {b})goto bb_{jump_pos};\n"));
-                }
-                FatOp::IfICmpGreater(jump_pos)=>{
-                    let b = vstack.pop().unwrap();
-                    let a = vstack.pop().unwrap();
-                    code.push_str(&format!("\tif({a} > {b})goto bb_{jump_pos};\n"));
-                }
-                FatOp::GoTo(jump_pos)=>{
-                    code.push_str(&format!("\tgoto bb_{jump_pos};\n"));
-                },
-                FatOp::IInc(variable,increment)=>{
-                    let vname = format!("loc{variable}i").into_boxed_str();
-                    cg.ensure_exists(&vname,&FieldType::Int);
-                    code.push_str(&format!("\t{vname} = {vname} + {increment};\n"));
-                }
-                _=>todo!("Can't convert {op:?} to C."),
-            }
-        }
-        println!("code:{code:?}");
-        cg.put_bb(code.into(),self.beg_idx);
-    }
-}
 struct FatClass{
     name:IString,
     super_name:IString,
-    fields:Vec<FieldType>,
+    fields:Vec<VariableType>,
     methods:Vec<Method>,
     vmethods:Vec<Method>,
 }
 #[test]
 fn cg_sqr_mag(){
-    let mut m_cg = MethodCG::new(&[FieldType::Float,FieldType::Float],"sqr",FieldType::Float);
-    let bb = BasicBlock{input:Vec::new(),output:Vec::new(),ops:&[
+    let mut m_cg = MethodCG::new(&[VariableType::Float,VariableType::Float],"sqr",VariableType::Float);
+    let bb = BasicBlock::new(&[
         FatOp::FLoad(0),FatOp::FLoad(0),FatOp::FMul,FatOp::FLoad(1),FatOp::FLoad(1),FatOp::FMul,FatOp::FAdd,FatOp::FReturn,
-    ],beg_idx:0};
+    ],0);
     bb.codegen(&mut m_cg);
     let final_code = m_cg.final_code();
 }  
@@ -341,7 +248,7 @@ fn cg_factorial(){
             FatOp::ILoad(2),FatOp::ILoad(0),FatOp::IfICmpGreater(13),FatOp::ILoad(1),
             FatOp::ILoad(2),FatOp::IMul,FatOp::IStore(1),FatOp::IInc(2,1),
             FatOp::GoTo(4),FatOp::ILoad(1),FatOp::IReturn,
-        ]),args:vec![FieldType::Int],ret_val:FieldType::Int
+        ]),args:vec![VariableType::Int],ret_val:VariableType::Int
     };
     let code = method.codegen();
     panic!("code:{code}");
@@ -350,8 +257,104 @@ fn cg_factorial(){
 fn cg_divide(){
     let method = Method{name:"bt".into(),ops:Box::new([
             FatOp::ILoad(0),FatOp::ILoad(1),FatOp::IDiv,FatOp::IReturn,
-        ]),args:vec![FieldType::Int,FieldType::Int],ret_val:FieldType::Int
+        ]),args:vec![VariableType::Int,VariableType::Int],ret_val:VariableType::Int
     };
     let code = method.codegen();
     panic!("code:{code}");
 }  
+#[derive(Debug,Parser)]
+#[command(author, version, about, long_about = None)]
+struct ConvertionArgs{
+    // Source files to load and convert to C.
+    #[arg(short,long)]
+    source_files:Vec<PathBuf>,
+    // Target directory
+    #[arg(short, long)]
+    out:PathBuf,
+}
+struct CompilationContext{
+    classes:HashMap<IString,Class>,
+    methods:HashMap<IString,Method>,
+}
+struct Class{
+    parrent:IString,
+}
+impl Class{
+    fn from_java_class(java_class:&importer::ImportedJavaClass)->Self{
+        todo!();
+    }
+    fn write_header<W:Write>(out:&mut W)->std::io::Result<()>{
+        todo!();
+    }
+}
+const ERR_NO_EXT:i32 = 1;
+const ERR_BAD_EXT:i32 = 2;
+const ERR_FOPEN_FAIL:i32 = 3;
+const PROGRESS_BAR_SIZE:usize = 50;
+fn print_progress(curr:usize,whole:usize){
+    print!("\r{curr}/{whole} \t");
+    let fract = ((curr as f64 / whole as f64)*(PROGRESS_BAR_SIZE as f64)).round() as usize;
+    for i in 0..PROGRESS_BAR_SIZE{
+        if i < fract{
+            print!("█");
+        }
+        else{
+            print!("░");
+        }
+    }
+    std::io::stdout().flush();
+}
+impl CompilationContext{
+    fn new(ca:&ConvertionArgs)->Result<Self,BytecodeImportError>{
+        let mut loaded_classes = Vec::new();
+        for (index,path) in ca.source_files.iter().enumerate(){
+            let path_disp = path.display();
+            let extension = path.extension();
+            println!("\rSuccessfully loaded file {path_disp}!                           ");
+            print_progress(index,ca.source_files.len());
+            let extension = match extension{
+                Some(extension)=>extension,
+                None=>{
+                    eprintln!("\nFile at {path_disp} has no extension, so it can't be determied if it is either .class or .jar, and can't be compiled!");
+                    std::process::exit(ERR_NO_EXT);
+                }
+            };
+            match extension.to_str(){
+                Some("jar")=>{
+                    let mut src = match std::fs::File::open(path){
+                        Ok(src)=>src,
+                        Err(err)=>{
+                            eprintln!("\nFile at {path_disp} can't be opened because {err:?}!");
+                            std::process::exit(ERR_FOPEN_FAIL);
+                        }
+                    };
+                    let classes = importer::load_jar(&mut src)?;
+                    loaded_classes.extend(classes);
+                },
+                Some("class")=>{
+                    let mut src = match std::fs::File::open(path){
+                        Ok(src)=>src,
+                        Err(err)=>{
+                            eprintln!("\nFile at {path_disp} can't be opened because {err:?}!");
+                            std::process::exit(ERR_FOPEN_FAIL);
+                        }
+                    };
+                    let class = importer::load_class(&mut src)?;
+                    loaded_classes.push(class);
+                },
+                _=>{
+                    eprintln!("\nfile at {path_disp} is neither .class nor .jar, and can't be compiled!");
+                    std::process::exit(ERR_BAD_EXT);
+                },
+            };
+        }
+        println!("\r Finished stage 1(Import) of JVM bytecode to C translation.");
+        todo!();
+    }   
+}
+fn main(){
+    let args = ConvertionArgs::parse();
+    println!("args:{args:?}");
+    CompilationContext::new(&args).unwrap();
+    
+}
