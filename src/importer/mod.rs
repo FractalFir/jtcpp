@@ -1,7 +1,7 @@
 mod attribute;
 pub mod opcodes;
 use crate::importer::attribute::BootstrapMethod;
-use crate::IString;
+use crate::{class_path_to_class_mangled,method_name_to_c_name,desc_to_mangled,IString};
 use attribute::Attribute;
 use opcodes::OpCode;
 macro_rules! load_fn_impl {
@@ -60,10 +60,10 @@ pub(crate) struct Method {
 impl Method {
     pub(crate) fn mangled_name(&self, class: &ImportedJavaClass) -> IString {
         format!(
-            "{}::{}{}",
-            class.lookup_class(class.this_class()).unwrap(),
-            self.name(class),
-            self.descriptor(class)
+            "{}_ce_{}_ne_{}",
+            class_path_to_class_mangled(class.lookup_class(class.this_class()).unwrap()),
+            method_name_to_c_name(self.name(class)),
+            desc_to_mangled(self.descriptor(class)),
         )
         .into()
     }

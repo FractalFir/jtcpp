@@ -1,4 +1,4 @@
-use super::{field_descriptor_to_ftype, VariableType};
+use super::{field_descriptor_to_ftype,class_path_to_class_mangled, VariableType};
 use crate::importer::{opcodes::OpCode, ImportedJavaClass};
 use crate::IString;
 use smallvec::*;
@@ -93,7 +93,7 @@ pub(crate) enum FatOp {
     FNeg,
     LUShr,
     IUShr,
-    InvokeSpecial(IString, u8),
+    InvokeSpecial(IString,IString, u8),
     InvokeStatic(IString, u8),
     InvokeInterface(IString, u8),
     InvokeDynamic, //Temporarly ignored(Hard to parse)
@@ -106,6 +106,7 @@ pub(crate) enum FatOp {
     FGetStatic(IString, IString),
     DGetStatic(IString, IString),
     AGetStatic{class_name:IString, field_name:IString,type_name:IString},
+    AAGetStatic{atype:VariableType},
     CGetStatic(IString, IString),
     ZPutStatic(IString, IString),
     BPutStatic(IString, IString),
@@ -115,6 +116,7 @@ pub(crate) enum FatOp {
     FPutStatic(IString, IString),
     DPutStatic(IString, IString),
     APutStatic{class_name:IString, field_name:IString,type_name:IString},
+    AAPutStatic{atype:VariableType},
     CPutStatic(IString, IString),
     ZGetField(IString, IString),
     BGetField(IString, IString),
@@ -125,6 +127,7 @@ pub(crate) enum FatOp {
     DGetField(IString, IString),
     AGetField{class_name:IString, field_name:IString,type_name:IString},
     CGetField(IString, IString),
+    AAGetField{atype:VariableType},
     ZPutField(IString, IString),
     BPutField(IString, IString),
     SPutField(IString, IString),
@@ -133,6 +136,7 @@ pub(crate) enum FatOp {
     FPutField(IString, IString),
     DPutField(IString, IString),
     APutField{class_name:IString, field_name:IString,type_name:IString},
+    AAPutField{atype:VariableType},
     CPutField(IString, IString),
     Dup,
     Dup2,
@@ -373,7 +377,8 @@ pub(crate) fn expand_ops(ops: &[(OpCode, u16)], class: &ImportedJavaClass) -> Bo
                     VariableType::Float => FatOp::FGetStatic(class_name, field_name),
                     VariableType::Double => FatOp::DGetStatic(class_name, field_name),
                     VariableType::ObjectRef{name} => FatOp::AGetStatic{class_name, field_name,type_name:name},
-                    VariableType::ArrayRef(_) => todo!("Getting array statics is not suported yet!"),
+                    VariableType::ArrayRef(atype) => FatOp::AAGetStatic{atype:*atype},
+                    VariableType::Void => panic!("ERR: GetStatic op with invalid field type Void!"),
                 }
             }
             OpCode::PutStatic(index) => {
@@ -388,7 +393,8 @@ pub(crate) fn expand_ops(ops: &[(OpCode, u16)], class: &ImportedJavaClass) -> Bo
                     VariableType::Float => FatOp::FPutStatic(class_name, field_name),
                     VariableType::Double => FatOp::DPutStatic(class_name, field_name),
                     VariableType::ObjectRef{name} => FatOp::APutStatic{class_name, field_name,type_name:name},
-                    VariableType::ArrayRef(_) => todo!("Setting array statics is not suported yet!"),
+                    VariableType::ArrayRef(atype) => FatOp::AAPutStatic{atype:*atype},
+                    VariableType::Void => panic!("ERR: PutStatic op with invalid field type Void!"),
                 }
             }
             OpCode::GetField(index) => {
@@ -403,7 +409,8 @@ pub(crate) fn expand_ops(ops: &[(OpCode, u16)], class: &ImportedJavaClass) -> Bo
                     VariableType::Float => FatOp::FGetField(class_name, field_name),
                     VariableType::Double => FatOp::DGetField(class_name, field_name),
                     VariableType::ObjectRef{name}  => FatOp::AGetField{class_name, field_name,type_name:name},
-                    VariableType::ArrayRef(_) => todo!("Getting array fields is not suported yet!"),
+                    VariableType::ArrayRef(atype) => FatOp::AAGetField{atype:*atype},
+                    VariableType::Void => panic!("ERR: GetField op with invalid field type Void!"),
                 }
             }
             OpCode::IfICmpEq(op_offset) => {
@@ -476,6 +483,7 @@ pub(crate) fn expand_ops(ops: &[(OpCode, u16)], class: &ImportedJavaClass) -> Bo
             }
             OpCode::PutField(index) => {
                 let (ftype, class_name, field_name) = fieldref_to_info(*index, class);
+                let class_name = class_path_to_class_mangled(&class_name);
                 match ftype {
                     VariableType::Bool => FatOp::ZPutField(class_name, field_name),
                     VariableType::Byte => FatOp::BPutField(class_name, field_name),
@@ -486,7 +494,9 @@ pub(crate) fn expand_ops(ops: &[(OpCode, u16)], class: &ImportedJavaClass) -> Bo
                     VariableType::Float => FatOp::FPutField(class_name, field_name),
                     VariableType::Double => FatOp::DPutField(class_name, field_name),
                     VariableType::ObjectRef{name} => FatOp::APutField{class_name, field_name,type_name:name},
-                    VariableType::ArrayRef(_) => todo!("Setting array fields is not suported yet!"),
+                    VariableType::ArrayRef(atype) => FatOp::AAPutField{atype:*atype},
+                    VariableType::Void => panic!("ERR: PutField op with invalid field type Void!"),
+                    
                 }
             }
             OpCode::New(index) => {
@@ -532,11 +542,14 @@ pub(crate) fn expand_ops(ops: &[(OpCode, u16)], class: &ImportedJavaClass) -> Bo
             ///TODO: handle non-static methods(change argc by 1)
             OpCode::InvokeSpecial(index) => {
                 let (name, mut argc) = methodref_to_mangled_and_argc(*index, class);
+                let (method_class, _) = class.lookup_method_ref(*index).unwrap();
+                let method_class = class.lookup_class(method_class).unwrap();
+                let method_class = class_path_to_class_mangled(method_class);
                 // Either <init> or <cinit>
                 if name.contains('<') {
                     argc += 1;
                 }
-                FatOp::InvokeSpecial(name, argc)
+                FatOp::InvokeSpecial(method_class,name, argc)
             }
             OpCode::InvokeStatic(index) => {
                 let (name, argc) = methodref_to_mangled_and_argc(*index, class);

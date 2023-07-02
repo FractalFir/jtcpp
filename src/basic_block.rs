@@ -31,9 +31,8 @@ impl<'a> BasicBlock<'a>{
         let mut code = String::new();
         for op in self.ops.iter(){
             match op{
-                FatOp::FLoad(index)=>{
-                    vstack.push(format!("loc{index}f").into());
-                }
+                FatOp::FLoad(index)=>vstack.push(format!("loc{index}f").into()),
+                FatOp::ALoad(index)=>vstack.push(format!("loc{index}a").into()),
                 FatOp::FMul=>basic_op_impl!(vstack,cg,code,"float","*"),
                 FatOp::FAdd=>basic_op_impl!(vstack,cg,code,"float","+"),
                 FatOp::FDiv=>basic_op_impl!(vstack,cg,code,"float","/"),
@@ -61,6 +60,23 @@ impl<'a> BasicBlock<'a>{
                     code.push_str(&format!("\tint {im_name} = {int};\n"));
                     vstack.push(im_name);
                 },
+                FatOp::SConst(short)=>{
+                    let im_name = cg.get_im_name();
+                    code.push_str(&format!("\tshort {im_name} = {short};\n"));
+                    vstack.push(im_name);
+                },
+                FatOp::StringConst(string)=>{
+                    let im_name = cg.get_im_name();
+                    code.push_str("\t const short[] ");
+                    code.push_str(&im_name);
+                    code.push_str("_data = [");
+
+                    for c in string.encode_utf16(){
+                        code.push_str(&format!("{c:x},"));
+                    }
+                    code.push_str(&format!("0x0000];\n java_cs_lang_cs_String {im_name} = runtime_alloc_string(im_data,sizeof({im_name}_data)/sizeof({im_name}_data[]0);\n"));
+                    vstack.push(im_name);
+                }
                 FatOp::ILoad(var_idx)=>{
                     vstack.push(format!("loc{var_idx}i").into_boxed_str());
                 },
@@ -74,6 +90,7 @@ impl<'a> BasicBlock<'a>{
                     let ret = vstack.pop().unwrap();
                     code.push_str(&format!("\treturn {ret};\n"));
                 }
+                FatOp::Return => code.push_str("return;"),
                 FatOp::IfNotZero(jump_pos)=>{
                     let val = vstack.pop().unwrap();
                     code.push_str(&format!("\tif({val} != 0)goto bb_{jump_pos};\n"));
@@ -96,10 +113,40 @@ impl<'a> BasicBlock<'a>{
                     cg.ensure_exists(&vname,&VariableType::Int);
                     code.push_str(&format!("\t{vname} = {vname} + {increment};\n"));
                 }
+                FatOp::APutField{class_name,field_name,type_name}=>{
+                    let objref = vstack.pop().unwrap();
+                    let field_owner = vstack.pop().unwrap();
+                    cg.add_include(class_name);
+                    code.push_str(&format!("\t{field_owner}->{field_name} = {objref};\n"));
+                }
+                FatOp::InvokeSpecial(class_path,method_name,mut argc)=>{
+                    if method_name.contains("_init_"){
+                        argc+=1;
+                    }
+                    let mut args = Vec::with_capacity(argc as usize);
+                    for _ in 0..argc{
+                        args.push(vstack.pop().unwrap());
+                    }
+                    //let im_name = cg.get_im_name();
+                    cg.add_include(class_path);
+                    code.push('\t');
+                    code.push_str(method_name);
+                    code.push('(');
+                    let mut args = args.iter();
+                    match args.next(){
+                        Some(arg)=>code.push_str(arg),
+                        None=>(),
+                    }
+                    for arg in args{
+                        code.push(',');
+                        code.push_str(arg);
+                    }
+                    code.push_str(");\n");
+                },
                 _=>todo!("Can't convert {op:?} to C."),
             }
         }
-        println!("code:{code:?}");
+        //println!("code:{code:?}");
         cg.put_bb(code.into(),self.beg_idx);
     }
 }
