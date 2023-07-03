@@ -1,7 +1,10 @@
 import java.lang.Math; 
 class Rand{
+    static float state = 0.32324203f;
     static float Rand(){
-      return 0.232423f;
+        state = ((state*state + .122423255f)*27.200424f - 1.234343f);
+        state = state%1.0f;
+        return state;
     }
 }
 final class Vector3{
@@ -80,6 +83,19 @@ class Planet{
       position.Add(velocity);
   }
   public void Display(){
+      System.out.print("p:(");
+      System.out.print(this.position.x);
+      System.out.print(",");
+      System.out.print(this.position.y);
+      System.out.print(",");
+      System.out.print(this.position.z);
+      System.out.print(") v:(");
+      System.out.print(this.velocity.x);
+      System.out.print(",");
+      System.out.print(this.velocity.y);
+      System.out.print(",");
+      System.out.print(this.velocity.z);
+      System.out.println(")");
       //TODO:Display data!
   }
 }
@@ -103,11 +119,19 @@ class NBody{
      }
   }
   public void Display(){
+     System.out.println("TICK!");
      for(int i = 0; i < planets.length; i++){
         planets[i].Display();
      }
   }
   public static NBody NewNBody(int pc){
     return new NBody(pc);
+  }
+  public static void main(String[] args){
+    NBody n = new NBody(3);
+    for(int i = 0; i < 1000; i++){
+      n.Tick();
+      n.Display();
+    }
   }
 }

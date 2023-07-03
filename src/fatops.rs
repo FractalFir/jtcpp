@@ -1,8 +1,8 @@
-use super::{field_descriptor_to_ftype,class_path_to_class_mangled, VariableType};
+use super::{class_path_to_class_mangled, field_descriptor_to_ftype,method_desc_to_args, VariableType};
 use crate::importer::{opcodes::OpCode, ImportedJavaClass};
 use crate::IString;
-use smallvec::*;
 use crate::{mangle_method_name, mangle_method_name_partial, method_desc_to_argc};
+use smallvec::*;
 fn fieldref_to_info(index: u16, class: &ImportedJavaClass) -> (VariableType, IString, IString) {
     let (field_class, nametype) = class.lookup_filed_ref(index).unwrap();
     let field_class = class.lookup_class(field_class).unwrap();
@@ -21,6 +21,17 @@ fn methodref_to_mangled_and_argc(index: u16, class: &ImportedJavaClass) -> (IStr
     //let method_id = self.code_container.lookup_or_insert_method(&mangled);
     let argc = method_desc_to_argc(&descriptor);
     (mangled, argc)
+}
+fn methodref_to_mangled_and_sig(index: u16, class: &ImportedJavaClass) -> (IString,IString, Vec<VariableType>,VariableType) {
+    let (method_class, nametype) = class.lookup_method_ref(index).unwrap();
+    let (name, descriptor) = class.lookup_nametype(nametype).unwrap();
+    let method_class = class.lookup_class(method_class).unwrap();
+    let name = class.lookup_utf8(name).unwrap();
+    let descriptor = class.lookup_utf8(descriptor).unwrap();
+    let mangled = mangle_method_name(method_class, name, descriptor);
+    //let method_id = self.code_container.lookup_or_insert_method(&mangled);
+    let (args,ret) = method_desc_to_args(descriptor);
+    (method_class.into(),mangled, args,ret)
 }
 fn methodref_to_partial_mangled_and_argc(
     index: u16,
@@ -93,11 +104,11 @@ pub(crate) enum FatOp {
     FNeg,
     LUShr,
     IUShr,
-    InvokeSpecial(IString,IString, u8),
-    InvokeStatic(IString, u8),
+    InvokeSpecial(IString, IString, u8),
+    InvokeStatic(IString,IString, Box<[VariableType]>,VariableType),
     InvokeInterface(IString, u8),
     InvokeDynamic, //Temporarly ignored(Hard to parse)
-    InvokeVirtual(IString, IString, u8),
+    InvokeVirtual(IString,IString, Box<[VariableType]>,VariableType),
     ZGetStatic(IString, IString),
     BGetStatic(IString, IString),
     SGetStatic(IString, IString),
@@ -105,8 +116,16 @@ pub(crate) enum FatOp {
     LGetStatic(IString, IString),
     FGetStatic(IString, IString),
     DGetStatic(IString, IString),
-    AGetStatic{class_name:IString, field_name:IString,type_name:IString},
-    AAGetStatic{atype:VariableType},
+    AGetStatic {
+        class_name: IString,
+        field_name: IString,
+        type_name: IString,
+    },
+    AAGetStatic {
+        //class_name: IString,
+        //field_name: IString,
+        atype: VariableType,
+    },
     CGetStatic(IString, IString),
     ZPutStatic(IString, IString),
     BPutStatic(IString, IString),
@@ -115,8 +134,14 @@ pub(crate) enum FatOp {
     LPutStatic(IString, IString),
     FPutStatic(IString, IString),
     DPutStatic(IString, IString),
-    APutStatic{class_name:IString, field_name:IString,type_name:IString},
-    AAPutStatic{atype:VariableType},
+    APutStatic {
+        class_name: IString,
+        field_name: IString,
+        type_name: IString,
+    },
+    AAPutStatic {
+        atype: VariableType,
+    },
     CPutStatic(IString, IString),
     ZGetField(IString, IString),
     BGetField(IString, IString),
@@ -125,9 +150,17 @@ pub(crate) enum FatOp {
     LGetField(IString, IString),
     FGetField(IString, IString),
     DGetField(IString, IString),
-    AGetField{class_name:IString, field_name:IString,type_name:IString},
+    AGetField {
+        class_name: IString,
+        field_name: IString,
+        type_name: IString,
+    },
     CGetField(IString, IString),
-    AAGetField{atype:VariableType},
+    AAGetField {
+        class_name: IString,
+        field_name: IString,
+        atype: VariableType,
+    },
     ZPutField(IString, IString),
     BPutField(IString, IString),
     SPutField(IString, IString),
@@ -135,8 +168,16 @@ pub(crate) enum FatOp {
     LPutField(IString, IString),
     FPutField(IString, IString),
     DPutField(IString, IString),
-    APutField{class_name:IString, field_name:IString,type_name:IString},
-    AAPutField{atype:VariableType},
+    APutField {
+        class_name: IString,
+        field_name: IString,
+        type_name: IString,
+    },
+    AAPutField {
+        class_name: IString,
+        field_name: IString,
+        atype: VariableType,
+    },
     CPutField(IString, IString),
     Dup,
     Dup2,
@@ -231,34 +272,34 @@ pub(crate) enum FatOp {
         pairs: Box<[(i32, usize)]>,
     },
 }
-impl FatOp{
-    pub fn jump_target(&self)->Option<SmallVec<[usize;4]>>{
-        match self{
-            Self::IfACmpEq(target)=>Some(smallvec![*target]),
-            Self::IfICmpGreater(target)=>Some(smallvec![*target]),
-            Self::IfIGreterEqual(target)=>Some(smallvec![*target]),
-            Self::IfGreterEqualZero(target)=>Some(smallvec![*target]),
-            Self::IfGreterZero(target)=>Some(smallvec![*target]),
-            Self::IfLessZero(target)=>Some(smallvec![*target]),
-            Self::IfLessEqualZero(target)=>Some(smallvec![*target]),
-            Self::IfNull(target)=>Some(smallvec![*target]),
-            Self::IfNotNull(target)=>Some(smallvec![*target]),
-            Self::IfZero(target)=>Some(smallvec![*target]),
-            Self::IfNotZero(target)=>Some(smallvec![*target]),
-            Self::IfICmpNe(target)=>Some(smallvec![*target]),
-            Self::IfICmpEq(target)=>Some(smallvec![*target]),
-            Self::IfACmpNe(target)=>Some(smallvec![*target]),
-            Self::IfICmpLessEqual(target)=>Some(smallvec![*target]),
-            Self::IfICmpLess(target)=>Some(smallvec![*target]),
-            Self::GoTo(target)=>Some(smallvec![*target]),
-            Self::LookupSwitch{default_op,pairs}=>{
+impl FatOp {
+    pub fn jump_target(&self) -> Option<SmallVec<[usize; 4]>> {
+        match self {
+            Self::IfACmpEq(target) => Some(smallvec![*target]),
+            Self::IfICmpGreater(target) => Some(smallvec![*target]),
+            Self::IfIGreterEqual(target) => Some(smallvec![*target]),
+            Self::IfGreterEqualZero(target) => Some(smallvec![*target]),
+            Self::IfGreterZero(target) => Some(smallvec![*target]),
+            Self::IfLessZero(target) => Some(smallvec![*target]),
+            Self::IfLessEqualZero(target) => Some(smallvec![*target]),
+            Self::IfNull(target) => Some(smallvec![*target]),
+            Self::IfNotNull(target) => Some(smallvec![*target]),
+            Self::IfZero(target) => Some(smallvec![*target]),
+            Self::IfNotZero(target) => Some(smallvec![*target]),
+            Self::IfICmpNe(target) => Some(smallvec![*target]),
+            Self::IfICmpEq(target) => Some(smallvec![*target]),
+            Self::IfACmpNe(target) => Some(smallvec![*target]),
+            Self::IfICmpLessEqual(target) => Some(smallvec![*target]),
+            Self::IfICmpLess(target) => Some(smallvec![*target]),
+            Self::GoTo(target) => Some(smallvec![*target]),
+            Self::LookupSwitch { default_op, pairs } => {
                 let mut sv = smallvec![*default_op];
-                for (key,target) in pairs.iter(){
+                for (key, target) in pairs.iter() {
                     sv.push(*target);
                 }
                 Some(sv)
-            },
-            _=>None,
+            }
+            _ => None,
         }
     }
 }
@@ -376,8 +417,12 @@ pub(crate) fn expand_ops(ops: &[(OpCode, u16)], class: &ImportedJavaClass) -> Bo
                     VariableType::Long => FatOp::LGetStatic(class_name, field_name),
                     VariableType::Float => FatOp::FGetStatic(class_name, field_name),
                     VariableType::Double => FatOp::DGetStatic(class_name, field_name),
-                    VariableType::ObjectRef{name} => FatOp::AGetStatic{class_name, field_name,type_name:name},
-                    VariableType::ArrayRef(atype) => FatOp::AAGetStatic{atype:*atype},
+                    VariableType::ObjectRef { name } => FatOp::AGetStatic {
+                        class_name,
+                        field_name,
+                        type_name: name,
+                    },
+                    VariableType::ArrayRef(atype) => FatOp::AAGetStatic { atype: *atype },
                     VariableType::Void => panic!("ERR: GetStatic op with invalid field type Void!"),
                 }
             }
@@ -392,8 +437,12 @@ pub(crate) fn expand_ops(ops: &[(OpCode, u16)], class: &ImportedJavaClass) -> Bo
                     VariableType::Long => FatOp::LPutStatic(class_name, field_name),
                     VariableType::Float => FatOp::FPutStatic(class_name, field_name),
                     VariableType::Double => FatOp::DPutStatic(class_name, field_name),
-                    VariableType::ObjectRef{name} => FatOp::APutStatic{class_name, field_name,type_name:name},
-                    VariableType::ArrayRef(atype) => FatOp::AAPutStatic{atype:*atype},
+                    VariableType::ObjectRef { name } => FatOp::APutStatic {
+                        class_name,
+                        field_name,
+                        type_name: name,
+                    },
+                    VariableType::ArrayRef(atype) => FatOp::AAPutStatic { atype: *atype },
                     VariableType::Void => panic!("ERR: PutStatic op with invalid field type Void!"),
                 }
             }
@@ -408,8 +457,16 @@ pub(crate) fn expand_ops(ops: &[(OpCode, u16)], class: &ImportedJavaClass) -> Bo
                     VariableType::Long => FatOp::LGetField(class_name, field_name),
                     VariableType::Float => FatOp::FGetField(class_name, field_name),
                     VariableType::Double => FatOp::DGetField(class_name, field_name),
-                    VariableType::ObjectRef{name}  => FatOp::AGetField{class_name, field_name,type_name:name},
-                    VariableType::ArrayRef(atype) => FatOp::AAGetField{atype:*atype},
+                    VariableType::ObjectRef { name } => FatOp::AGetField {
+                        class_name,
+                        field_name,
+                        type_name: name,
+                    },
+                    VariableType::ArrayRef(atype) => FatOp::AAGetField {
+                        class_name,
+                        field_name,
+                        atype: *atype 
+                    },
                     VariableType::Void => panic!("ERR: GetField op with invalid field type Void!"),
                 }
             }
@@ -493,15 +550,18 @@ pub(crate) fn expand_ops(ops: &[(OpCode, u16)], class: &ImportedJavaClass) -> Bo
                     VariableType::Long => FatOp::LPutField(class_name, field_name),
                     VariableType::Float => FatOp::FPutField(class_name, field_name),
                     VariableType::Double => FatOp::DPutField(class_name, field_name),
-                    VariableType::ObjectRef{name} => FatOp::APutField{class_name, field_name,type_name:name},
-                    VariableType::ArrayRef(atype) => FatOp::AAPutField{atype:*atype},
+                    VariableType::ObjectRef { name } => FatOp::APutField {
+                        class_name,
+                        field_name,
+                        type_name: name,
+                    },
+                    VariableType::ArrayRef(atype) => FatOp::AAPutField { class_name, field_name, atype: *atype },
                     VariableType::Void => panic!("ERR: PutField op with invalid field type Void!"),
-                    
                 }
             }
             OpCode::New(index) => {
                 let class_name = class.lookup_class(*index).unwrap();
-                FatOp::New(class_name.into())
+                FatOp::New(class_path_to_class_mangled(class_name.into()))
             }
             OpCode::ANewArray(index) => {
                 let class_name = class.lookup_class(*index).unwrap();
@@ -549,15 +609,16 @@ pub(crate) fn expand_ops(ops: &[(OpCode, u16)], class: &ImportedJavaClass) -> Bo
                 if name.contains('<') {
                     argc += 1;
                 }
-                FatOp::InvokeSpecial(method_class,name, argc)
+                FatOp::InvokeSpecial(method_class, name, argc)
             }
             OpCode::InvokeStatic(index) => {
-                let (name, argc) = methodref_to_mangled_and_argc(*index, class);
-                FatOp::InvokeStatic(name, argc)
+                let (method_class_name,name, args,ret) = methodref_to_mangled_and_sig(*index, class);
+                FatOp::InvokeStatic(method_class_name,name, args.into(),ret)
             }
             OpCode::InvokeVirtual(index) => {
+                let (_,_, args,ret) = methodref_to_mangled_and_sig(*index, class);
                 let (class, name, argc) = methodref_to_partial_mangled_and_argc(*index, class);
-                FatOp::InvokeVirtual(class, name, argc + 1)
+                FatOp::InvokeVirtual(class,name, args.into(),ret)
             }
             OpCode::InvokeInterface(index) => {
                 let (name, argc) = methodref_to_mangled_and_argc(*index, class);
