@@ -59,13 +59,7 @@ pub(crate) struct Method {
 }
 impl Method {
     pub(crate) fn mangled_name(&self, class: &ImportedJavaClass) -> IString {
-        format!(
-            "{}_ce_{}_ne_{}",
-            class_path_to_class_mangled(class.lookup_class(class.this_class()).unwrap()),
-            method_name_to_c_name(self.name(class)),
-            desc_to_mangled(self.descriptor(class)),
-        )
-        .into()
+        crate::mangle_method_name_partial(self.name(class),self.descriptor(class))
     }
     pub(crate) fn virtual_name(&self, class: &ImportedJavaClass) -> IString {
         crate::mangle_method_name_partial(self.name(class),self.descriptor(class))

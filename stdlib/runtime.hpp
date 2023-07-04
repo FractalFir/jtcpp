@@ -7,3 +7,4 @@ typedef struct ClassData{} ClassData;
 void* get_virtual();
 void* runtime_alloc_new(size_t size);
 #endif
+

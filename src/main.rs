@@ -1,14 +1,25 @@
 mod basic_block;
 mod fatops;
 mod importer;
-macro_rules! include_stdlib_file {
+mod class;
+mod method;
+use class::Class;
+use method::Method;
+macro_rules! include_stdlib_header_file {
     ($file_name:ident) => {
         const $file_name: &[u8] =
-            include_bytes!(concat!("../stdlib/", stringify!($file_name), ".h"));
+            include_bytes!(concat!("../stdlib/", stringify!($file_name), ".hpp"));
     };
 }
-include_stdlib_file!(java_cs_lang_cs_Object);
-include_stdlib_file!(runtime);
+macro_rules! include_stdlib_source_file {
+    ($file_name:ident) => {
+        const $file_name: &[u8] =
+            include_bytes!(concat!("../stdlib/", stringify!($file_name), ".cpp"));
+    };
+}
+include_stdlib_header_file!(java_cs_lang_cs_Object);
+include_stdlib_header_file!(java_cs_lang_cs_String);
+include_stdlib_header_file!(runtime);
 use crate::fatops::FatOp;
 use crate::importer::{BytecodeImportError, ImportedJavaClass};
 use clap::Parser;
@@ -67,18 +78,17 @@ fn desc_to_mangled(desc: &str) -> IString {
     }
     res.replace('[', "_arr_").into()
 }
-fn mangle_method_name(class: &str, method: &str, desc: &str) -> IString {
-    let class = class_path_to_class_mangled(class);
+fn mangle_method_name(method: &str, desc: &str) -> IString {
     let desc = desc_to_mangled(desc);
     let method = method_name_to_c_name(method);
-    format!("{class}_ce_{method}_ne_{desc}").into_boxed_str()
+    format!("{method}_ne_{desc}").into()
 }
 fn mangle_method_name_partial(method: &str, desc: &str) -> IString {
     let desc = desc_to_mangled(desc);
     let method = method_name_to_c_name(method);
     format!("{method}_ne_{desc}").into()
 }
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone,PartialEq)]
 enum VariableType {
     Void,
     Char,
@@ -113,8 +123,8 @@ impl VariableType {
             Self::Short => "short".into(),
             Self::Char => "short".into(),
             Self::Void => "void".into(),
-            Self::ObjectRef { name } => format!("{name}*").into(),
-            Self::ArrayRef(atype) => format!("{}*", atype.c_type()).into(),
+            Self::ObjectRef { name } => format!("std::shared_ptr<{name}>").into(),
+            Self::ArrayRef(atype) => format!("std::shared_ptr<RuntimeArray<{}>>", atype.c_type()).into(),
             //_=>todo!("Can't get ctype of {self:?}!"),
         }
     }
@@ -207,12 +217,7 @@ fn method_desc_to_argc(desc: &str) -> u8 {
     //println!("span:{span},res{res}");
     res as u8
 }
-struct Method {
-    name: IString,
-    ops: Box<[FatOp]>,
-    args: Vec<VariableType>,
-    ret_val: VariableType,
-}
+
 fn method_desc_to_args(desc: &str) -> (Vec<VariableType>, VariableType) {
     let arg_beg = desc.chars().position(|c| c == '(').unwrap() + 1;
     let arg_end = desc.chars().position(|c| c == ')').unwrap();
@@ -233,87 +238,12 @@ fn method_desc_to_args(desc: &str) -> (Vec<VariableType>, VariableType) {
     }
     (args, ret_val)
 }
-impl Method {
-    pub(crate) fn from_raw_method(
-        method: &crate::importer::Method,
-        name: &str,
-        jc: &ImportedJavaClass,
-    ) -> Method {
-        let name: IString = name.into();
-        let (mut args, ret_val) = method_desc_to_args(method.descriptor(&jc));
-        let ops = match method.bytecode() {
-            Some(ops) => fatops::expand_ops(ops, jc),
-            None => [].into(),
-        };
-        if name.contains("_init_") {
-            args.insert(
-                0,
-                VariableType::ObjectRef {
-                    name: class_path_to_class_mangled(jc.lookup_class(jc.this_class()).unwrap()),
-                },
-            );
-        }
-        Method {
-            name,
-            args,
-            ret_val,
-            ops,
-        }
-    }
-    fn into_bbs(&self) -> Vec<(usize, BasicBlock)> {
-        let mut jump_targets = Vec::with_capacity(self.ops.len());
-        for op in self.ops.iter() {
-            match op.jump_target() {
-                Some(targets) => {
-                    targets.iter().for_each(|target| jump_targets.push(*target));
-                }
-                None => (),
-            }
-        }
-        //println!("jump_targets:{jump_targets:?}");
-        jump_targets.sort();
-        jump_targets.dedup();
-        let mut bbs = Vec::new();
-        let mut bb_beg = 0;
-        for (index, op) in self.ops.iter().enumerate() {
-            println!("{index}:{op:?}");
-            if jump_targets.contains(&index) {
-                bbs.push((bb_beg, BasicBlock::new(&self.ops[bb_beg..index], bb_beg)));
-                bb_beg = index;
-            }
-        }
-        if bb_beg < self.ops.len() {
-            bbs.push((bb_beg, BasicBlock::new(&self.ops[bb_beg..], bb_beg)));
-        }
-        bbs.into()
-    }
-    fn link_bbs(bbs: &mut [(usize, BasicBlock)]) {
-        //TODO:Link em
-    }
-    fn codegen(&self) -> IString {
-        let mut bbs = self.into_bbs();
-        Self::link_bbs(&mut bbs);
-        let mut cg = MethodCG::new(&self.args, &self.name, self.ret_val.clone());
-        for arg in &self.args{
-            match arg.dependency(){
-                Some(dep)=>cg.add_include(dep),
-                None=>(),
-            }
-        }
-        match self.ret_val.dependency(){
-            Some(dep)=>cg.add_include(dep),
-            None=>(),
-        }
-        for basic_block in bbs {
-            basic_block.1.codegen(&mut cg);
-        }
-        cg.final_code()
-    }
-}
+
 
 use std::collections::{HashMap, HashSet};
 struct MethodCG {
     includes: String,
+    class_name:IString,
     fn_name: IString,
     signature: IString,
     local_dec: String,
@@ -326,12 +256,29 @@ impl MethodCG {
         //TODO:Handle double includes!
         self.includes.push_str("#include \"");
         self.includes.push_str(file);
-        self.includes.push_str(".h\"\n");
+        self.includes.push_str(".hpp\"\n");
     }
     fn ensure_exists(&mut self, varname: &str, vartype: &VariableType) {
         if !self.locals.contains(varname) {
             let ctype = vartype.c_type();
-            self.local_dec.push_str(&format!("\t{ctype} {varname};\n"));
+            self.local_dec.push_str(&format!("\t{ctype} {varname}"));
+            match vartype{
+                VariableType::ArrayRef(_)=>{
+                    self.local_dec.push_str("(nullptr);\n");
+                }
+                VariableType::ObjectRef { name }=>{
+                    self.local_dec.push_str("(nullptr);\n");
+                }
+                _=>{
+                    self.local_dec.push_str(";\n");
+                }
+            }
+            self.locals.insert(varname.into());
+        }
+    }
+    fn ensure_exists_auto(&mut self, varname: &str) {
+        if !self.locals.contains(varname) {
+            self.local_dec.push_str(&format!("\tauto {varname};\n"));
             self.locals.insert(varname.into());
         }
     }
@@ -339,8 +286,9 @@ impl MethodCG {
         self.code.push_str(&format!("\tbb_{beg_idx}:\n"));
         self.code.push_str(&code);
     }
-    fn new(args: &[VariableType], fn_name: &str, ret_val: VariableType) -> Self {
-        let mut sig = format!("{} {fn_name}(", ret_val.c_type());
+    fn new(args: &[VariableType], fn_name: &str, class_name:&str,ret_val: VariableType) -> Self {
+        println!("fn_name:{fn_name}");
+        let mut sig = format!("{ret} {class_name}::{fn_name}(", ret=ret_val.c_type());
         let mut arg_iter = args.iter().enumerate();
         match arg_iter.next() {
             Some((arg_index, arg)) => {
@@ -350,20 +298,27 @@ impl MethodCG {
             }
             None => (),
         }
+        let locals = HashSet::new();
+        let mut local_dec = String::new();
+        if fn_name.contains("init"){
+            local_dec.push_str(&format!("\tstd::shared_ptr<{class_name}> loc0a = std::static_pointer_cast<{class_name}>(this->shared_from_this());\n",class_name = class_name));
+        }
         for (arg_index, arg) in arg_iter {
             let ctype = arg.c_type();
             let postifx = arg.type_postifx();
             sig.push_str(&format!(",{ctype} loc{arg_index}{postifx}"));
         }
         sig.push(')');
+        let includes = format!("#include \"{class_name}.hpp\"\n");
         Self {
             signature: sig.into(),
-            local_dec: String::new(),
-            locals: HashSet::new(),
+            class_name:class_name.into(),
+            local_dec,
+            locals,
             im_idx: 0,
             code: String::new(),
             fn_name: fn_name.into(),
-            includes: String::new(),
+            includes,
         }
     }
     fn get_im_name(&mut self) -> IString {
@@ -405,49 +360,6 @@ fn cg_sqr_mag() {
     bb.codegen(&mut m_cg);
     let final_code = m_cg.final_code();
 }
-#[test]
-fn cg_factorial() {
-    let method = Method {
-        name: "bt".into(),
-        ops: Box::new([
-            FatOp::IConst(1),
-            FatOp::IStore(1),
-            FatOp::IConst(2),
-            FatOp::IStore(2),
-            FatOp::ILoad(2),
-            FatOp::ILoad(0),
-            FatOp::IfICmpGreater(13),
-            FatOp::ILoad(1),
-            FatOp::ILoad(2),
-            FatOp::IMul,
-            FatOp::IStore(1),
-            FatOp::IInc(2, 1),
-            FatOp::GoTo(4),
-            FatOp::ILoad(1),
-            FatOp::IReturn,
-        ]),
-        args: vec![VariableType::Int],
-        ret_val: VariableType::Int,
-    };
-    let code = method.codegen();
-    panic!("code:{code}");
-}
-#[test]
-fn cg_divide() {
-    let method = Method {
-        name: "bt".into(),
-        ops: Box::new([
-            FatOp::ILoad(0),
-            FatOp::ILoad(1),
-            FatOp::IDiv,
-            FatOp::IReturn,
-        ]),
-        args: vec![VariableType::Int, VariableType::Int],
-        ret_val: VariableType::Int,
-    };
-    let code = method.codegen();
-    panic!("code:{code}");
-}
 #[derive(Debug, Parser)]
 #[command(author, version, about, long_about = None)]
 struct ConvertionArgs {
@@ -461,168 +373,6 @@ struct ConvertionArgs {
 struct CompilationContext {
     classes: HashMap<IString, Class>,
     methods: HashMap<IString, Method>,
-}
-struct Class {
-    name: IString,
-    parrent: IString,
-    fields: Vec<(IString, VariableType)>,
-    static_fields: Vec<(IString, VariableType)>,
-    static_methods: Vec<(IString, Method)>,
-    virtual_methods: Vec<(IString, Method)>,
-}
-impl Class {
-    fn from_java_class(java_class: &importer::ImportedJavaClass) -> Self {
-        let name = match java_class.lookup_class(java_class.this_class()) {
-            Some(name) => name,
-            None => {
-                eprintln!(
-                    "\nMalformed class file! `this_class` field did not refer to a valid class!"
-                );
-                std::process::exit(ERR_THIS_INVALID);
-            }
-        };
-        let class_name = class_path_to_class_mangled(name);
-        let parrent = match java_class.lookup_class(java_class.super_class()) {
-            Some(parrent) => parrent,
-            None => {
-                eprintln!(
-                    "\nMalformed class file! `super_class` field did not refer to a valid class!"
-                );
-                std::process::exit(ERR_SUPER_INVALID);
-            }
-        };
-        let parrent = class_path_to_class_mangled(parrent);
-        let mut fields: Vec<(IString, VariableType)> =
-            Vec::with_capacity(java_class.fields().len());
-        let mut static_fields: Vec<(IString, VariableType)> =
-            Vec::with_capacity(java_class.fields().len());
-        for field in java_class.fields() {
-            let (name_index, descriptor_index) = (field.name_index, field.descriptor_index);
-            let name = java_class.lookup_utf8(name_index).unwrap();
-            let ftype = field_descriptor_to_ftype(descriptor_index, java_class);
-            if field.flags.is_static() {
-                static_fields.push((name.into(), ftype));
-            } else {
-                fields.push((name.into(), ftype));
-            }
-        }
-        let mut static_methods: Vec<(IString, Method)> =
-            Vec::with_capacity(java_class.methods().len());
-        let mut virtual_methods: Vec<(IString, Method)> =
-            Vec::with_capacity(java_class.methods().len());
-        for method in java_class.methods() {
-            if method.is_virtual(java_class) {
-                let mangled_name = method.virtual_name(java_class);
-                let mut method = Method::from_raw_method(&method, &mangled_name, &java_class);
-                method.args.insert(
-                    0,
-                    VariableType::ObjectRef {
-                        name: class_name.clone(),
-                    },
-                );
-                virtual_methods.push((mangled_name, method));
-            } else {
-                let mangled_name = method.mangled_name(java_class);
-                let method = Method::from_raw_method(&method, &mangled_name, &java_class);
-                static_methods.push((mangled_name, method));
-            }
-        }
-        Class {
-            name: class_name,
-            parrent,
-            fields,
-            static_fields,
-            static_methods,
-            virtual_methods,
-        }
-        //todo!("name:{name} parrent:{parrent} fields:{fields:?} static_fields:{static_fields:?}");
-    }
-    fn write_header<W: Write>(&self, hout: &mut W) -> std::io::Result<()> {
-        let mut header_includes = format!("#include <stdbool.h>\n#include \"{super_class}.h\"\n",
-        super_class=self.parrent);
-        let mut fref_includes = String::new();
-        let mut header_fields = format!(
-            "//Fielddef BEGINS\n\n#define {class_name}_FIELDS {super_class}_FIELDS \\\n",
-            class_name = self.name,
-            super_class = self.parrent
-        );
-        for (fname, field_type) in &self.fields {
-            header_fields.push_str(&format!(
-                "\t{ctype} {fname}; \\\n",
-                ctype = field_type.c_type()
-            ));
-            if let Some(dep) = field_type.dependency(){
-                fref_includes.push_str(&format!("#include \"{dep}.h\"\n"));
-            }
-        }
-        header_fields.push_str("//Fielddef ENDS\n\n");
-        let mut header_class = &format!(
-            "typedef struct {class_name} {{\n\t{class_name}_FIELDS \n}} {class_name};\n",
-            class_name = self.name
-        );
-        let mut method_defs = String::new();
-        method_defs.push_str("//Static defs\n");
-        for (name,method) in &self.static_methods{
-            method_defs.push_str(&format!("{ret} {name}(",ret = method.ret_val.c_type(),name = method.name));
-            let mut margs = method.args.iter();
-            match margs.next(){
-                Some(arg)=>method_defs.push_str(&arg.c_type()),
-                None=>(),
-            }
-            for marg in margs{
-                method_defs.push(',');
-                method_defs.push_str(&marg.c_type());
-            }
-            method_defs.push_str(");\n");
-        }
-        method_defs.push_str("//Virtual defs\n");
-        for (vname,method) in &self.virtual_methods{
-            method_defs.push_str(&format!("{ret} {name}(",ret = method.ret_val.c_type(),name = method.name));
-            let mut margs = method.args.iter();
-            match margs.next(){
-                Some(arg)=>{
-                    method_defs.push_str(&arg.c_type());
-                    if let Some(dep) = arg.dependency(){
-                        if dep != &*self.name{
-                            fref_includes.push_str(&format!("#include \"{dep}.h\"\n"));
-                        }
-                    }
-                },
-                None=>(),
-            }
-            for marg in margs{
-                method_defs.push(',');
-                method_defs.push_str(&marg.c_type());
-                if let Some(dep) = marg.dependency(){
-                    if dep != &*self.name{
-                        fref_includes.push_str(&format!("#include \"{dep}.h\"\n"));
-                    }
-                    fref_includes.push_str(&format!("#include \"{dep}.h\"\n"));
-                }
-            }
-            method_defs.push_str(");\n");
-        }
-        let mut last = format!("{super_class}_VMETHOD_LAST",super_class=self.parrent);
-        let mut idx = 0;
-        for (vname,method) in &self.virtual_methods{
-            let next:String = format!("{class_name}_VID_{idx}",class_name = self.name);
-            method_defs.push_str(&format!("#ifndef {vname}_VID\n#define {vname}_VID {last}\n#endif\n#define {next} {last} + 1\n"));
-            last = next;
-            idx+=1;
-        }
-        method_defs.push_str(&format!("#define {class_name}_VMETHOD_LAST {last} + 1\n",class_name = self.name));
-        let mut statics_defs = String::new();
-        for (static_name,static_type) in &self.static_fields{
-            let ctype = static_type.c_type();
-            statics_defs.push_str(&format!("extern {ctype} {class_name}_{static_name};\n",class_name = self.name));
-        }
-        //let mut method_defs = format!("");
-        let final_header = format!(
-            "#pragma once\n#ifndef {class_name}_H_GUARD\n#define {class_name}_H_GUARD\n{fref_includes}{header_includes}{header_fields}{header_class}{method_defs}{statics_defs}#endif",
-            class_name=self.name
-        );
-        hout.write_all(&final_header.into_bytes())
-    }
 }
 const ERR_NO_EXT: i32 = 1;
 const ERR_BAD_EXT: i32 = 2;
@@ -649,19 +399,27 @@ impl CompilationContext {
         //java_cs_lang_cs_Object;
         let mut object_out = target_path.clone();
         object_out.push("java_cs_lang_cs_Object");
-        object_out.set_extension("h");
+        object_out.set_extension("hpp");
         if !object_out.exists() {
             let mut object_out = std::fs::File::create(object_out)?;
             object_out.write_all(java_cs_lang_cs_Object)?;
         }
         let mut runtime_out = target_path.clone();
         runtime_out.push("runtime");
-        runtime_out.set_extension("h");
+        runtime_out.set_extension("hpp");
         if !runtime_out.exists() {
             let mut runtime_out = std::fs::File::create(runtime_out)?;
             runtime_out.write_all(runtime)?;
         }
-        //include_stdlib_file!(runtime);
+        let mut java_cs_lang_cs_String_out = target_path.clone();
+        java_cs_lang_cs_String_out.push("java_cs_lang_cs_String");
+        java_cs_lang_cs_String_out.set_extension("hpp");
+        if !java_cs_lang_cs_String_out.exists() {
+            let mut java_cs_lang_cs_String_out = std::fs::File::create(java_cs_lang_cs_String_out)?;
+            java_cs_lang_cs_String_out.write_all(java_cs_lang_cs_String)?;
+        }
+        
+        //include_stdlib_header_file!(runtime);
         Ok(())
     }
     fn new(ca: &ConvertionArgs) -> Result<Self, BytecodeImportError> {
@@ -709,20 +467,20 @@ impl CompilationContext {
             };
             println!("\rSuccessfully loaded file {path_disp}!                           ");
         }
-        println!("\r Finished stage 1(Import) of JVM bytecode to C translation.");
+        println!("\r Finished stage 1(Import) of JVM bytecode to C++ translation.");
         let mut classes = Vec::with_capacity(loaded_classes.len());
         for (index, class) in loaded_classes.iter().enumerate() {
             print_progress(index, loaded_classes.len());
             classes.push(Class::from_java_class(&class));
         }
-        println!("\r Finished stage 2(Conversion) of JVM bytecode to C translation.");
+        println!("\r Finished stage 2(Conversion) of JVM bytecode to C++ translation.");
         std::fs::create_dir_all(&ca.out);
         Self::write_stdlib(&ca.out);
         for (index, class) in classes.iter().enumerate() {
             print_progress(index, classes.len());
             let mut path = ca.out.clone();
-            path.push(&*class.name);
-            path.set_extension("h");
+            path.push(class.name());
+            path.set_extension("hpp");
             let hout = std::fs::File::create(&path);
             let mut hout = match hout {
                 Ok(hout) => hout,
@@ -746,18 +504,27 @@ impl CompilationContext {
                 path.display()
             );
         }
-        println!("\r Finished stage 3(Generating headers) of JVM bytecode to C translation.");
+        println!("\r Finished stage 3(Generating headers) of JVM bytecode to C++ translation.");
         for (index, class) in classes.iter().enumerate() {
             print_progress(index, classes.len());
-            for (sname, smethod) in &class.static_methods {
+            for (sname, smethod) in class.static_methods() {
                 let mut path = ca.out.clone();
-                path.push(&**sname);
-                path.set_extension("c");
+                path.push(&format!("{}_{}",class.name(),sname));
+                path.set_extension("cpp");
+                let mut cout = std::fs::File::create(path)?;
+                let mut code = smethod.codegen();
+                cout.write_all(&code.into_boxed_bytes())?;
+            }
+            for (sname, smethod) in class.virtual_methods() {
+                let mut path = ca.out.clone();
+                path.push(&format!("{}_{}",class.name(),sname));
+                path.set_extension("cpp");
                 let mut cout = std::fs::File::create(path)?;
                 let mut code = smethod.codegen();
                 cout.write_all(&code.into_boxed_bytes())?;
             }
         }
+        println!("\r Finished stage 4(Generating Source files) of JVM bytecode to C++ translation.");
         todo!();
     }
 }
