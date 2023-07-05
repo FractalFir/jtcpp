@@ -48,8 +48,8 @@ impl<'a> BasicBlock<'a> {
                 FatOp::ANewArray(class)=>{
                     let im_name = cg.get_im_name();
                     let length = vstack.pop().unwrap();
-                    code.push_str(&format!("\tstd::shared_ptr<RuntimeArray<std::shared_ptr<{class}>>> {im_name} = std::shared_ptr<{class}>(new RuntimeArray({length}));\n"));
-                    vstack.push(im_name);
+                    code.push_str(&format!("\tstd::shared_ptr<RuntimeArray<std::shared_ptr<{class}>>> {im_name}aa = std::shared_ptr<RuntimeArray<std::shared_ptr<{class}>>>(new RuntimeArray<std::shared_ptr<{class}>>({length}));\n"));
+                    vstack.push(format!("{im_name}aa").into());
                 },
                 FatOp::FAdd => basic_op_impl!(vstack, cg, code, "float", "+"),
                 FatOp::FDiv => basic_op_impl!(vstack, cg, code, "float", "/"),
@@ -98,16 +98,16 @@ impl<'a> BasicBlock<'a> {
                     vstack.push(format!("loc{var_idx}i").into_boxed_str());
                 }
                 FatOp::IStore(var_idx) => {
-                    let vname = format!("loc{var_idx}i").into_boxed_str();
+                    let vname = format!("loc{var_idx}").into_boxed_str();
                     cg.ensure_exists(&vname, &VariableType::Int);
                     let set = vstack.pop().unwrap();
-                    code.push_str(&format!("\t{vname} = {set};\n"));
+                    code.push_str(&format!("\t{vname}i = {set};\n"));
                 }
                 FatOp::FStore(var_idx) => {
-                    let vname = format!("loc{var_idx}f").into_boxed_str();
+                    let vname = format!("loc{var_idx}").into_boxed_str();
                     cg.ensure_exists(&vname, &VariableType::Float);
                     let set = vstack.pop().unwrap();
-                    code.push_str(&format!("\t{vname} = {set};\n"));
+                    code.push_str(&format!("\t{vname}f = {set};\n"));
                 }
                 FatOp::Dup => {
                     let val = vstack.pop().unwrap();
@@ -119,9 +119,9 @@ impl<'a> BasicBlock<'a> {
                     let im_name = cg.get_im_name();
                     cg.ensure_exists(&im_name,&VariableType::ObjectRef{name:class_name.clone()});
                     code.push_str(&format!(
-                        "\t{im_name} = std::shared_ptr<{class_name}>(new {class_name}());\n"
+                        "\t{im_name}a = std::shared_ptr<{class_name}>(new {class_name}());\n"
                     ));
-                    vstack.push(im_name);
+                    vstack.push(format!("{im_name}a").into());
                 }
                 FatOp::ArrayLength=>{
                     let array = vstack.pop().unwrap();
@@ -130,10 +130,10 @@ impl<'a> BasicBlock<'a> {
                     vstack.push(im_name);
                 }
                 FatOp::AStore(var_idx) => {
-                    let vname = format!("loc{var_idx}a").into_boxed_str();
+                    let vname = format!("loc{var_idx}").into_boxed_str();
                     cg.ensure_exists(&vname, &VariableType::Int);
                     let set = vstack.pop().unwrap();
-                    code.push_str(&format!("\t{vname} = {set};\n"));
+                    code.push_str(&format!("\t{vname}a = {set};\n"));
                 }
                 FatOp::FReturn | FatOp::DReturn | FatOp::IReturn | FatOp::AReturn => {
                     let ret = vstack.pop().unwrap();
@@ -234,9 +234,9 @@ impl<'a> BasicBlock<'a> {
                     code.push_str(&format!("\tgoto bb_{jump_pos};\n"));
                 }
                 FatOp::IInc(variable, increment) => {
-                    let vname = format!("loc{variable}i").into_boxed_str();
+                    let vname = format!("loc{variable}").into_boxed_str();
                     cg.ensure_exists(&vname, &VariableType::Int);
-                    code.push_str(&format!("\t{vname} = {vname} + {increment};\n"));
+                    code.push_str(&format!("\t{vname}i = {vname}i + {increment};\n"));
                 }
                 FatOp::APutField {
                     class_name,
@@ -265,8 +265,8 @@ impl<'a> BasicBlock<'a> {
                     }
                     let im_name = cg.get_im_name();
                     cg.ensure_exists(&im_name,&VariableType::ArrayRef(Box::new(atype.clone())));
-                    code.push_str(&format!("\t{im_name} = {field_owner}->{field_name};\n"));
-                    vstack.push(im_name);
+                    code.push_str(&format!("\t{im_name}aa = {field_owner}->{field_name};\n"));
+                    vstack.push(format!("{im_name}aa").into());
                 },
                 FatOp::F2D=>{
                     let float = vstack.pop().unwrap();

@@ -138,7 +138,7 @@ impl VariableType {
             Self::Byte => "b".into(),
             Self::Short => "s".into(),
             Self::ObjectRef { name } => "a".into(),
-            Self::ArrayRef(atype) => format!("arr_{}", atype.c_type()).into(),
+            Self::ArrayRef(atype) => "aa".into(),
             _ => todo!("Can't get type postifx of {self:?}!"),
         }
     }
@@ -229,13 +229,14 @@ fn method_desc_to_args(desc: &str) -> (Vec<VariableType>, VariableType) {
         if !within_class {
             args.push(field_desc_str_to_ftype(arg_desc, index));
         }
-        if curr == 'L' {
+        if curr == 'L' || curr == '[' {
             within_class = true;
         }
         if curr == ';' {
             within_class = false;
         }
     }
+    println!("desc:{desc:?} args:{args:?}");
     (args, ret_val)
 }
 
@@ -259,7 +260,8 @@ impl MethodCG {
         self.includes.push_str(".hpp\"\n");
     }
     fn ensure_exists(&mut self, varname: &str, vartype: &VariableType) {
-        if !self.locals.contains(varname) {
+        let varname:IString = format!("{varname}{postfix}",postfix = vartype.type_postifx()).into();
+        if !self.locals.contains(&varname) {
             let ctype = vartype.c_type();
             self.local_dec.push_str(&format!("\t{ctype} {varname}"));
             match vartype{
@@ -286,27 +288,33 @@ impl MethodCG {
         self.code.push_str(&format!("\tbb_{beg_idx}:\n"));
         self.code.push_str(&code);
     }
-    fn new(args: &[VariableType], fn_name: &str, class_name:&str,ret_val: VariableType) -> Self {
-        println!("fn_name:{fn_name}");
+    fn new(args: &[VariableType], fn_name: &str, class_name:&str,ret_val: VariableType,is_virtual:bool) -> Self {
+        let locals = HashSet::new();
+        let mut local_dec = String::new();
+        if is_virtual{
+            local_dec.push_str(&format!("\tstd::shared_ptr<{class_name}> loc0a = std::static_pointer_cast<{class_name}>(this->shared_from_this());\n",class_name = class_name));
+        }
         let mut sig = format!("{ret} {class_name}::{fn_name}(", ret=ret_val.c_type());
-        let mut arg_iter = args.iter().enumerate();
+        let mut arg_iter = args.iter();
+        let mut arg_index = 0;
+        if is_virtual{
+            arg_index += 1;
+        }
         match arg_iter.next() {
-            Some((arg_index, arg)) => {
+            Some(arg) => {
                 let ctype = arg.c_type();
                 let postifx = arg.type_postifx();
+                println!("{ctype} loc{arg_index}{postifx}");
                 sig.push_str(&format!("{ctype} loc{arg_index}{postifx}"));
+                arg_index += 1;
             }
             None => (),
         }
-        let locals = HashSet::new();
-        let mut local_dec = String::new();
-        if fn_name.contains("init"){
-            local_dec.push_str(&format!("\tstd::shared_ptr<{class_name}> loc0a = std::static_pointer_cast<{class_name}>(this->shared_from_this());\n",class_name = class_name));
-        }
-        for (arg_index, arg) in arg_iter {
+        for arg in arg_iter {
             let ctype = arg.c_type();
             let postifx = arg.type_postifx();
             sig.push_str(&format!(",{ctype} loc{arg_index}{postifx}"));
+            arg_index += 1;
         }
         sig.push(')');
         let includes = format!("#include \"{class_name}.hpp\"\n");

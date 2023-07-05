@@ -72,9 +72,9 @@ impl Method {
     }
     pub(crate) fn is_virtual(&self, class: &ImportedJavaClass) -> bool {
         if self.access_flags.is_static() {
-            false
+            self.name(class).contains("init")
         } else {
-            !self.name(class).contains('<')
+            true
         }
     }
     pub(crate) fn access_flags(&self) -> &AccessFlags {

@@ -1,5 +1,6 @@
 use crate::{BasicBlock,IString,VariableType,ImportedJavaClass,FatOp,MethodCG,method_desc_to_args};
 pub(crate) struct Method {
+    is_virtual:bool,
     class_name:IString,
     name: IString,
     ops: Box<[FatOp]>,
@@ -23,12 +24,14 @@ impl Method {
     ) -> Method {
         let name: IString = name.into();
         let (mut args, ret_val) = method_desc_to_args(method.descriptor(&jc));
+        let is_virtual = method.is_virtual(jc);
         let ops = match method.bytecode() {
             Some(ops) => crate::fatops::expand_ops(ops, jc),
             None => [].into(),
         };
         Method {
             class_name:jc.lookup_class(jc.this_class()).unwrap().into(),
+            is_virtual,
             name,
             args,
             ret_val,
@@ -69,7 +72,7 @@ impl Method {
         println!("Generating code for method {}",self.name);
         let mut bbs = self.into_bbs();
         Self::link_bbs(&mut bbs);
-        let mut cg = MethodCG::new(&self.args, &self.name,&self.class_name, self.ret_val.clone());
+        let mut cg = MethodCG::new(&self.args, &self.name,&self.class_name, self.ret_val.clone(),self.is_virtual);
         for arg in &self.args{
             match arg.dependency(){
                 Some(dep)=>cg.add_include(dep),
