@@ -44,13 +44,13 @@ impl<'a> BasicBlock<'a> {
                     let im_name = cg.get_im_name();
                     code.push_str(&format!("\tfloat {im_name} = fmodf({a},{b});\n"));
                     vstack.push(im_name);
-                },
-                FatOp::ANewArray(class)=>{
+                }
+                FatOp::ANewArray(class) => {
                     let im_name = cg.get_im_name();
                     let length = vstack.pop().unwrap();
                     code.push_str(&format!("\tstd::shared_ptr<RuntimeArray<std::shared_ptr<{class}>>> {im_name}aa = std::shared_ptr<RuntimeArray<std::shared_ptr<{class}>>>(new RuntimeArray<std::shared_ptr<{class}>>({length}));\n"));
                     vstack.push(format!("{im_name}aa").into());
-                },
+                }
                 FatOp::FAdd => basic_op_impl!(vstack, cg, code, "float", "+"),
                 FatOp::FDiv => basic_op_impl!(vstack, cg, code, "float", "/"),
                 FatOp::FSub => basic_op_impl!(vstack, cg, code, "float", "-"),
@@ -114,16 +114,23 @@ impl<'a> BasicBlock<'a> {
                     vstack.push(val.clone());
                     vstack.push(val);
                 }
-                FatOp::Pop => {vstack.pop().unwrap();},
+                FatOp::Pop => {
+                    vstack.pop().unwrap();
+                }
                 FatOp::New(class_name) => {
                     let im_name = cg.get_im_name();
-                    cg.ensure_exists(&im_name,&VariableType::ObjectRef{name:class_name.clone()});
+                    cg.ensure_exists(
+                        &im_name,
+                        &VariableType::ObjectRef {
+                            name: class_name.clone(),
+                        },
+                    );
                     code.push_str(&format!(
                         "\t{im_name}a = std::shared_ptr<{class_name}>(new {class_name}());\n"
                     ));
                     vstack.push(format!("{im_name}a").into());
                 }
-                FatOp::ArrayLength=>{
+                FatOp::ArrayLength => {
                     let array = vstack.pop().unwrap();
                     let im_name = cg.get_im_name();
                     code.push_str(&format!("\tint {im_name} = {array}.GetLength();\n"));
@@ -140,70 +147,86 @@ impl<'a> BasicBlock<'a> {
                     code.push_str(&format!("\treturn {ret};\n"));
                 }
                 FatOp::Return => code.push_str("\treturn;\n"),
-                FatOp::InvokeVirtual(_class_name,vmethod_name, args, ret) => {
-                    let mut args:Vec<_> = args.iter().map(|_|{vstack.pop().unwrap()}).collect();
+                FatOp::InvokeVirtual(_class_name, vmethod_name, args, ret) => {
+                    let mut args: Vec<_> = args.iter().map(|_| vstack.pop().unwrap()).collect();
                     args.push(vstack.pop().unwrap());
                     args.reverse();
                     let mut args = args.iter();
                     let objref = args.next().unwrap();
-                    
-                    if *ret == VariableType::Void{
+
+                    if *ret == VariableType::Void {
                         code.push_str(&format!("\t{objref}->{vmethod_name}("));
-                    }
-                    else{
+                    } else {
                         let im_name = cg.get_im_name();
-                        code.push_str(&format!("\t{ret} {im_name} = {objref}->{vmethod_name}(",ret = ret.c_type()));
+                        code.push_str(&format!(
+                            "\t{ret} {im_name} = {objref}->{vmethod_name}(",
+                            ret = ret.c_type()
+                        ));
                         vstack.push(im_name);
                     }
-                    match args.next(){
-                        Some(arg)=>code.push_str(arg),
-                        None=>(),
+                    match args.next() {
+                        Some(arg) => code.push_str(arg),
+                        None => (),
                     }
-                    for arg in args{
+                    for arg in args {
                         code.push(',');
                         code.push_str(arg);
                     }
                     code.push_str(");\n");
                 }
-                FatOp::AALoad=>{
+                FatOp::AALoad => {
                     let index = vstack.pop().unwrap();
                     let array_ref = vstack.pop().unwrap();
                     let im_name = cg.get_im_name();
                     cg.ensure_exists_auto(&im_name);
                     code.push_str(&format!("\t{im_name} = {array_ref}->Get({index});\n"));
                     vstack.push(im_name);
-                },
-                FatOp::FGetStatic(class_name,static_name)=>{
+                }
+                FatOp::FGetStatic(class_name, static_name) => {
                     let im_name = cg.get_im_name();
                     cg.add_include(class_name);
-                    code.push_str(&format!("\tfloat {im_name} = {class_name}::{static_name};\n"));
+                    code.push_str(&format!(
+                        "\tfloat {im_name} = {class_name}::{static_name};\n"
+                    ));
                     vstack.push(im_name);
                 }
-                FatOp::AGetStatic{class_name,static_name,type_name}=>{
+                FatOp::AGetStatic {
+                    class_name,
+                    static_name,
+                    type_name,
+                } => {
                     let im_name = cg.get_im_name();
                     cg.add_include(class_name);
-                    cg.ensure_exists(&im_name,&VariableType::ObjectRef{name:type_name.clone()});
+                    cg.ensure_exists(
+                        &im_name,
+                        &VariableType::ObjectRef {
+                            name: type_name.clone(),
+                        },
+                    );
                     code.push_str(&format!("\t{im_name} = {class_name}::{static_name};\n"));
                     vstack.push(im_name);
                 }
-                FatOp::FPutStatic(class_name,static_name)=>{
+                FatOp::FPutStatic(class_name, static_name) => {
                     let set = vstack.pop().unwrap();
                     cg.add_include(class_name);
                     code.push_str(&format!("\t{class_name}_{static_name} = {set};\n"));
                 }
-                FatOp::InvokeStatic(method_class_name,method_name,args,ret) => {
+                FatOp::InvokeStatic(method_class_name, method_name, args, ret) => {
                     cg.add_include(method_class_name);
                     let im_name = cg.get_im_name();
-                    code.push_str(&format!("\t{ret_ctype} {im_name} = {method_class_name}::{method_name}(",ret_ctype = ret.c_type()));
+                    code.push_str(&format!(
+                        "\t{ret_ctype} {im_name} = {method_class_name}::{method_name}(",
+                        ret_ctype = ret.c_type()
+                    ));
                     let mut args = args.into_iter().enumerate();
-                    match args.next(){
-                        Some((_,_))=>{
+                    match args.next() {
+                        Some((_, _)) => {
                             let val = vstack.pop().unwrap();
                             code.push_str(&val);
-                        } 
-                        None=>(),
+                        }
+                        None => (),
                     }
-                    for _ in args{
+                    for _ in args {
                         let val = vstack.pop().unwrap();
                         code.push(',');
                         code.push_str(&val);
@@ -248,56 +271,72 @@ impl<'a> BasicBlock<'a> {
                     cg.add_include(type_name);
                     code.push_str(&format!("\t{field_owner}->{field_name} = {objref};\n"));
                 }
-                FatOp::AAPutField{class_name,field_name,atype}=>{
+                FatOp::AAPutField {
+                    class_name,
+                    field_name,
+                    atype,
+                } => {
                     let arrref = vstack.pop().unwrap();
                     let field_owner = vstack.pop().unwrap();
                     cg.add_include(class_name);
-                    if let Some(dep) = atype.dependency(){
+                    if let Some(dep) = atype.dependency() {
                         cg.add_include(dep);
                     }
                     code.push_str(&format!("\t{field_owner}->{field_name} = {arrref};\n"));
-                },
-                FatOp::AAGetField{class_name,field_name,atype}=>{
+                }
+                FatOp::AAGetField {
+                    class_name,
+                    field_name,
+                    atype,
+                } => {
                     let field_owner = vstack.pop().unwrap();
                     cg.add_include(class_name);
-                    if let Some(dep) = atype.dependency(){
+                    if let Some(dep) = atype.dependency() {
                         cg.add_include(dep);
                     }
                     let im_name = cg.get_im_name();
-                    cg.ensure_exists(&im_name,&VariableType::ArrayRef(Box::new(atype.clone())));
+                    cg.ensure_exists(&im_name, &VariableType::ArrayRef(Box::new(atype.clone())));
                     code.push_str(&format!("\t{im_name}aa = {field_owner}->{field_name};\n"));
                     vstack.push(format!("{im_name}aa").into());
-                },
-                FatOp::F2D=>{
+                }
+                FatOp::F2D => {
                     let float = vstack.pop().unwrap();
                     let im_name = cg.get_im_name();
                     code.push_str(&format!("\tdouble {im_name} = (double){float};\n"));
                     vstack.push(im_name);
                 }
-                FatOp::D2F=>{
+                FatOp::D2F => {
                     let double = vstack.pop().unwrap();
                     let im_name = cg.get_im_name();
                     code.push_str(&format!("\tfloat {im_name} = (float){double};\n"));
                     vstack.push(im_name);
                 }
-                FatOp::FGetField(_class_name,field_name)=>{
+                FatOp::FGetField(_class_name, field_name) => {
                     let field_owner = vstack.pop().unwrap();
                     let im_name = cg.get_im_name();
-                    code.push_str(&format!("\tfloat {im_name} = {field_owner}->{field_name};\n"));
+                    code.push_str(&format!(
+                        "\tfloat {im_name} = {field_owner}->{field_name};\n"
+                    ));
                     vstack.push(im_name);
-                },
-                FatOp::AGetField{class_name: _,field_name,type_name}=>{
+                }
+                FatOp::AGetField {
+                    class_name: _,
+                    field_name,
+                    type_name,
+                } => {
                     let field_owner = vstack.pop().unwrap();
                     let im_name = cg.get_im_name();
-                    code.push_str(&format!("\tstd::shared_ptr<{type_name}> {im_name} = {field_owner}->{field_name};\n"));
+                    code.push_str(&format!(
+                        "\tstd::shared_ptr<{type_name}> {im_name} = {field_owner}->{field_name};\n"
+                    ));
                     vstack.push(im_name);
-                },
-                FatOp::AAStore=>{
+                }
+                FatOp::AAStore => {
                     let value = vstack.pop().unwrap();
                     let index = vstack.pop().unwrap();
                     let array_ref = vstack.pop().unwrap();
                     code.push_str(&format!("\t{array_ref}->Set({index},{value});\n"));
-                },
+                }
                 FatOp::FPutField(_class_name, field_name) => {
                     let float_value = vstack.pop().unwrap();
                     let field_owner = vstack.pop().unwrap();

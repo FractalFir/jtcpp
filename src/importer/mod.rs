@@ -1,7 +1,7 @@
 mod attribute;
 pub mod opcodes;
 use crate::importer::attribute::BootstrapMethod;
-use crate::{IString};
+use crate::IString;
 use attribute::Attribute;
 use opcodes::OpCode;
 macro_rules! load_fn_impl {
@@ -59,10 +59,10 @@ pub(crate) struct Method {
 }
 impl Method {
     pub(crate) fn mangled_name(&self, class: &ImportedJavaClass) -> IString {
-        crate::mangle_method_name_partial(self.name(class),self.descriptor(class))
+        crate::mangle_method_name_partial(self.name(class), self.descriptor(class))
     }
     pub(crate) fn virtual_name(&self, class: &ImportedJavaClass) -> IString {
-        crate::mangle_method_name_partial(self.name(class),self.descriptor(class))
+        crate::mangle_method_name_partial(self.name(class), self.descriptor(class))
     }
     pub(crate) fn name<'a>(&'a self, class: &'a ImportedJavaClass) -> &str {
         class.lookup_utf8(self.name_index).unwrap()

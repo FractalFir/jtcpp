@@ -1,9 +1,9 @@
 mod basic_block;
+mod class;
+mod cpp_codegen;
 mod fatops;
 mod importer;
-mod class;
 mod method;
-mod cpp_codegen;
 use class::Class;
 use method::Method;
 macro_rules! include_stdlib_header_file {
@@ -89,7 +89,7 @@ fn mangle_method_name_partial(method: &str, desc: &str) -> IString {
     let method = method_name_to_c_name(method);
     format!("{method}_ne_{desc}").into()
 }
-#[derive(Debug, Clone,PartialEq)]
+#[derive(Debug, Clone, PartialEq)]
 enum VariableType {
     Void,
     Char,
@@ -103,12 +103,20 @@ enum VariableType {
     ObjectRef { name: IString },
     ArrayRef(Box<VariableType>),
 }
-impl VariableType{
-    pub(crate) fn dependency(&self)->Option<&str>{
-        match self{
-            Self::Void | Self::Char | Self::Bool | Self::Byte | Self::Short | Self::Int | Self::Long | Self::Float | Self::Double => None,
-            Self::ObjectRef{name}=>Some(&name),
-            Self::ArrayRef(var)=>var.dependency(),
+impl VariableType {
+    pub(crate) fn dependency(&self) -> Option<&str> {
+        match self {
+            Self::Void
+            | Self::Char
+            | Self::Bool
+            | Self::Byte
+            | Self::Short
+            | Self::Int
+            | Self::Long
+            | Self::Float
+            | Self::Double => None,
+            Self::ObjectRef { name } => Some(&name),
+            Self::ArrayRef(var) => var.dependency(),
         }
     }
 }
@@ -124,8 +132,8 @@ impl VariableType {
             Self::Short => "short".into(),
             Self::Char => "short".into(),
             Self::Void => "void".into(),
-            Self::ObjectRef { name } => format!("std::shared_ptr<{name}>").into(),
-            Self::ArrayRef(atype) => format!("std::shared_ptr<RuntimeArray<{}>>", atype.c_type()).into(),
+            Self::ObjectRef { name } => format!("{name}*").into(),
+            Self::ArrayRef(atype) => format!("RuntimeArray<{}>*", atype.c_type()).into(),
             //_=>todo!("Can't get ctype of {self:?}!"),
         }
     }
@@ -241,11 +249,10 @@ fn method_desc_to_args(desc: &str) -> (Vec<VariableType>, VariableType) {
     (args, ret_val)
 }
 
-
-use std::collections::{HashMap, HashSet};
+use std::collections::HashSet;
 struct MethodCG {
     includes: String,
-    class_name:IString,
+    class_name: IString,
     fn_name: IString,
     signature: IString,
     local_dec: String,
@@ -261,18 +268,19 @@ impl MethodCG {
         self.includes.push_str(".hpp\"\n");
     }
     fn ensure_exists(&mut self, varname: &str, vartype: &VariableType) {
-        let varname:IString = format!("{varname}{postfix}",postfix = vartype.type_postifx()).into();
+        let varname: IString =
+            format!("{varname}{postfix}", postfix = vartype.type_postifx()).into();
         if !self.locals.contains(&varname) {
             let ctype = vartype.c_type();
             self.local_dec.push_str(&format!("\t{ctype} {varname}"));
-            match vartype{
-                VariableType::ArrayRef(_)=>{
+            match vartype {
+                VariableType::ArrayRef(_) => {
                     self.local_dec.push_str("(nullptr);\n");
                 }
-                VariableType::ObjectRef { name: _ }=>{
+                VariableType::ObjectRef { name: _ } => {
                     self.local_dec.push_str("(nullptr);\n");
                 }
-                _=>{
+                _ => {
                     self.local_dec.push_str(";\n");
                 }
             }
@@ -289,16 +297,22 @@ impl MethodCG {
         self.code.push_str(&format!("\tbb_{beg_idx}:\n"));
         self.code.push_str(&code);
     }
-    fn new(args: &[VariableType], fn_name: &str, class_name:&str,ret_val: VariableType,is_virtual:bool) -> Self {
+    fn new(
+        args: &[VariableType],
+        fn_name: &str,
+        class_name: &str,
+        ret_val: VariableType,
+        is_virtual: bool,
+    ) -> Self {
         let locals = HashSet::new();
         let mut local_dec = String::new();
-        if is_virtual{
+        if is_virtual {
             local_dec.push_str(&format!("\tstd::shared_ptr<{class_name}> loc0a = std::static_pointer_cast<{class_name}>(this->shared_from_this());\n",class_name = class_name));
         }
-        let mut sig = format!("{ret} {class_name}::{fn_name}(", ret=ret_val.c_type());
+        let mut sig = format!("{ret} {class_name}::{fn_name}(", ret = ret_val.c_type());
         let mut arg_iter = args.iter();
         let mut arg_index = 0;
-        if is_virtual{
+        if is_virtual {
             arg_index += 1;
         }
         match arg_iter.next() {
@@ -321,7 +335,7 @@ impl MethodCG {
         let includes = format!("#include \"{class_name}.hpp\"\n");
         Self {
             signature: sig.into(),
-            class_name:class_name.into(),
+            class_name: class_name.into(),
             local_dec,
             locals,
             im_idx: 0,
@@ -346,29 +360,6 @@ impl MethodCG {
         .into()
     }
 }
-#[test]
-fn cg_sqr_mag() {
-    let mut m_cg = MethodCG::new(
-        &[VariableType::Float, VariableType::Float],
-        "sqr",
-        VariableType::Float,
-    );
-    let bb = BasicBlock::new(
-        &[
-            FatOp::FLoad(0),
-            FatOp::FLoad(0),
-            FatOp::FMul,
-            FatOp::FLoad(1),
-            FatOp::FLoad(1),
-            FatOp::FMul,
-            FatOp::FAdd,
-            FatOp::FReturn,
-        ],
-        0,
-    );
-    bb.codegen(&mut m_cg);
-    let final_code = m_cg.final_code();
-}
 #[derive(Debug, Parser)]
 #[command(author, version, about, long_about = None)]
 struct ConvertionArgs {
@@ -379,10 +370,7 @@ struct ConvertionArgs {
     #[arg(short, long)]
     out: PathBuf,
 }
-struct CompilationContext {
-    classes: HashMap<IString, Class>,
-    methods: HashMap<IString, Method>,
-}
+struct CompilationContext {}
 const ERR_NO_EXT: i32 = 1;
 const ERR_BAD_EXT: i32 = 2;
 const ERR_FOPEN_FAIL: i32 = 3;
@@ -401,7 +389,7 @@ fn print_progress(curr: usize, whole: usize) {
             print!("░");
         }
     }
-    std::io::stdout().flush();
+    std::io::stdout().flush().unwrap();
 }
 impl CompilationContext {
     fn write_stdlib(target_path: &PathBuf) -> std::io::Result<()> {
@@ -427,7 +415,7 @@ impl CompilationContext {
             let mut java_cs_lang_cs_String_out = std::fs::File::create(java_cs_lang_cs_String_out)?;
             java_cs_lang_cs_String_out.write_all(java_cs_lang_cs_String)?;
         }
-        
+
         //include_stdlib_header_file!(runtime);
         Ok(())
     }
@@ -483,8 +471,8 @@ impl CompilationContext {
             classes.push(Class::from_java_class(&class));
         }
         println!("\r Finished stage 2(Conversion) of JVM bytecode to C++ translation.");
-        std::fs::create_dir_all(&ca.out);
-        Self::write_stdlib(&ca.out);
+        std::fs::create_dir_all(&ca.out).unwrap();
+        Self::write_stdlib(&ca.out).unwrap();
         for (index, class) in classes.iter().enumerate() {
             print_progress(index, classes.len());
             let mut path = ca.out.clone();
@@ -498,7 +486,7 @@ impl CompilationContext {
                     std::process::exit(ERR_BAD_OUT);
                 }
             };
-            match class.write_header(&mut hout) {
+            match cpp_codegen::create_header(&mut hout, class) {
                 Ok(_) => (),
                 Err(err) => {
                     eprintln!(
@@ -518,22 +506,22 @@ impl CompilationContext {
             print_progress(index, classes.len());
             for (sname, smethod) in class.static_methods() {
                 let mut path = ca.out.clone();
-                path.push(&format!("{}_{}",class.name(),sname));
+                path.push(&format!("{}_{}", class.name(), sname));
                 path.set_extension("cpp");
                 let mut cout = std::fs::File::create(path)?;
-                let code = smethod.codegen();
-                cout.write_all(&code.into_boxed_bytes())?;
+                cpp_codegen::create_method_impl(&mut cout, smethod);
             }
             for (sname, smethod) in class.virtual_methods() {
                 let mut path = ca.out.clone();
-                path.push(&format!("{}_{}",class.name(),sname));
+                path.push(&format!("{}_{}", class.name(), sname));
                 path.set_extension("cpp");
                 let mut cout = std::fs::File::create(path)?;
-                let code = smethod.codegen();
-                cout.write_all(&code.into_boxed_bytes())?;
+                cpp_codegen::create_method_impl(&mut cout, smethod);
             }
         }
-        println!("\r Finished stage 4(Generating Source files) of JVM bytecode to C++ translation.");
+        println!(
+            "\r Finished stage 4(Generating Source files) of JVM bytecode to C++ translation."
+        );
         todo!();
     }
 }

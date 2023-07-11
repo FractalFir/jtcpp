@@ -1,21 +1,30 @@
-use crate::{BasicBlock,IString,VariableType,ImportedJavaClass,FatOp,MethodCG,method_desc_to_args};
+use crate::{
+    method_desc_to_args, BasicBlock, FatOp, IString, ImportedJavaClass, MethodCG, VariableType,
+};
 pub(crate) struct Method {
-    is_virtual:bool,
-    class_name:IString,
+    is_virtual: bool,
+    class_name: IString,
     name: IString,
     ops: Box<[FatOp]>,
     args: Vec<VariableType>,
     ret_val: VariableType,
 }
 impl Method {
-    pub(crate) fn ret_val(&self)->&VariableType{
+    pub(crate) fn is_virtual(&self) ->bool{self.is_virtual}
+    pub(crate) fn class_name(&self) -> &str {
+        &self.class_name
+    }
+    pub(crate) fn ret_val(&self) -> &VariableType {
         &self.ret_val
     }
-    pub(crate) fn name(&self)->&str{
+    pub(crate) fn name(&self) -> &str {
         &self.name
     }
-    pub(crate) fn args(&self)->&[VariableType]{
+    pub(crate) fn args(&self) -> &[VariableType] {
         &self.args
+    }
+    pub(crate) fn ops(&self) -> &[FatOp] {
+        &self.ops
     }
     pub(crate) fn from_raw_method(
         method: &crate::importer::Method,
@@ -30,7 +39,7 @@ impl Method {
             None => [].into(),
         };
         Method {
-            class_name:jc.lookup_class(jc.this_class()).unwrap().into(),
+            class_name: jc.lookup_class(jc.this_class()).unwrap().into(),
             is_virtual,
             name,
             args,
@@ -69,19 +78,25 @@ impl Method {
         //TODO:Link em
     }
     pub(crate) fn codegen(&self) -> IString {
-        println!("Generating code for method {}",self.name);
+        println!("Generating code for method {}", self.name);
         let mut bbs = self.into_bbs();
         Self::link_bbs(&mut bbs);
-        let mut cg = MethodCG::new(&self.args, &self.name,&self.class_name, self.ret_val.clone(),self.is_virtual);
-        for arg in &self.args{
-            match arg.dependency(){
-                Some(dep)=>cg.add_include(dep),
-                None=>(),
+        let mut cg = MethodCG::new(
+            &self.args,
+            &self.name,
+            &self.class_name,
+            self.ret_val.clone(),
+            self.is_virtual,
+        );
+        for arg in &self.args {
+            match arg.dependency() {
+                Some(dep) => cg.add_include(dep),
+                None => (),
             }
         }
-        match self.ret_val.dependency(){
-            Some(dep)=>cg.add_include(dep),
-            None=>(),
+        match self.ret_val.dependency() {
+            Some(dep) => cg.add_include(dep),
+            None => (),
         }
         for basic_block in bbs {
             basic_block.1.codegen(&mut cg);
