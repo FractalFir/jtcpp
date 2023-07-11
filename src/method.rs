@@ -23,7 +23,7 @@ impl Method {
         jc: &ImportedJavaClass,
     ) -> Method {
         let name: IString = name.into();
-        let (mut args, ret_val) = method_desc_to_args(method.descriptor(&jc));
+        let (args, ret_val) = method_desc_to_args(method.descriptor(&jc));
         let is_virtual = method.is_virtual(jc);
         let ops = match method.bytecode() {
             Some(ops) => crate::fatops::expand_ops(ops, jc),
@@ -53,7 +53,7 @@ impl Method {
         jump_targets.dedup();
         let mut bbs = Vec::new();
         let mut bb_beg = 0;
-        for (index, op) in self.ops.iter().enumerate() {
+        for (index, _op) in self.ops.iter().enumerate() {
             //println!("{index}:{op:?}");
             if jump_targets.contains(&index) {
                 bbs.push((bb_beg, BasicBlock::new(&self.ops[bb_beg..index], bb_beg)));
@@ -65,7 +65,7 @@ impl Method {
         }
         bbs.into()
     }
-    fn link_bbs(bbs: &mut [(usize, BasicBlock)]) {
+    fn link_bbs(_bbs: &mut [(usize, BasicBlock)]) {
         //TODO:Link em
     }
     pub(crate) fn codegen(&self) -> IString {

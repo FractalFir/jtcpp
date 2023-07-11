@@ -12,6 +12,9 @@ impl Class {
     pub(crate) fn name(&self)->&str{
         &self.name
     }
+    pub(crate) fn parrent_name(&self)->&str{
+        &self.parrent
+    }
     pub(crate) fn static_methods(&self)->&[(IString,Method)]{
         &self.static_methods
     }
@@ -66,7 +69,7 @@ impl Class {
         for method in java_class.methods() {
             if method.is_virtual(java_class) || method.name(java_class).contains("<init>"){
                 let mangled_name = method.virtual_name(java_class);
-                let mut method = Method::from_raw_method(&method, &mangled_name, &java_class);
+                let method = Method::from_raw_method(&method, &mangled_name, &java_class);
                 virtual_methods.push((mangled_name, method));
             } else {
                 let mangled_name = method.mangled_name(java_class);
@@ -104,7 +107,7 @@ impl Class {
             }
         }
         let mut class_methods = "\t//Class Virtual Methods\n".to_owned();
-        for (method_name,method) in self.static_methods(){
+        for (_method_name,method) in self.static_methods(){
             class_methods.push_str(&format!("\tstatic {ret} {name}(",ret = method.ret_val().c_type(),name = method.name()));
             let mut margs = method.args().iter();
             match margs.next(){
@@ -120,7 +123,7 @@ impl Class {
             }
             class_methods.push_str(");\n");
         }
-        for (method_name,method) in self.virtual_methods(){
+        for (_method_name,method) in self.virtual_methods(){
             class_methods.push_str(&format!("\tvirtual {ret} {name}(",ret = method.ret_val().c_type(),name = method.name()));
             let mut margs = method.args().iter();
             //println!("\n\t{name}::{method_name}->{margs:?}",name = self.name);
@@ -138,7 +141,7 @@ impl Class {
             class_methods.push_str(");\n");
         }
         class_methods.push_str("\t//Class Static methods\n");
-        let class_ifaces = "".to_owned();
+        let _class_ifaces = "".to_owned();
         let class_def = format!("struct {class_name}:{super_name}{{\n{class_fields}{class_methods}}};");
         let final_header = format!("#pragma once\n#ifndef {class_name}_INCLUDE_GUARD\n#define {class_name}_INCLUDE_GUARD\n{includes}\n{class_def}\n#endif"); 
         hout.write_all(final_header.as_bytes())

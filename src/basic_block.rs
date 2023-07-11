@@ -140,7 +140,7 @@ impl<'a> BasicBlock<'a> {
                     code.push_str(&format!("\treturn {ret};\n"));
                 }
                 FatOp::Return => code.push_str("\treturn;\n"),
-                FatOp::InvokeVirtual(class_name,vmethod_name, args, ret) => {
+                FatOp::InvokeVirtual(_class_name,vmethod_name, args, ret) => {
                     let mut args:Vec<_> = args.iter().map(|_|{vstack.pop().unwrap()}).collect();
                     args.push(vstack.pop().unwrap());
                     args.reverse();
@@ -239,7 +239,7 @@ impl<'a> BasicBlock<'a> {
                     code.push_str(&format!("\t{vname}i = {vname}i + {increment};\n"));
                 }
                 FatOp::APutField {
-                    class_name,
+                    class_name: _,
                     field_name,
                     type_name,
                 } => {
@@ -280,13 +280,13 @@ impl<'a> BasicBlock<'a> {
                     code.push_str(&format!("\tfloat {im_name} = (float){double};\n"));
                     vstack.push(im_name);
                 }
-                FatOp::FGetField(class_name,field_name)=>{
+                FatOp::FGetField(_class_name,field_name)=>{
                     let field_owner = vstack.pop().unwrap();
                     let im_name = cg.get_im_name();
                     code.push_str(&format!("\tfloat {im_name} = {field_owner}->{field_name};\n"));
                     vstack.push(im_name);
                 },
-                FatOp::AGetField{class_name,field_name,type_name}=>{
+                FatOp::AGetField{class_name: _,field_name,type_name}=>{
                     let field_owner = vstack.pop().unwrap();
                     let im_name = cg.get_im_name();
                     code.push_str(&format!("\tstd::shared_ptr<{type_name}> {im_name} = {field_owner}->{field_name};\n"));
@@ -298,7 +298,7 @@ impl<'a> BasicBlock<'a> {
                     let array_ref = vstack.pop().unwrap();
                     code.push_str(&format!("\t{array_ref}->Set({index},{value});\n"));
                 },
-                FatOp::FPutField(class_name, field_name) => {
+                FatOp::FPutField(_class_name, field_name) => {
                     let float_value = vstack.pop().unwrap();
                     let field_owner = vstack.pop().unwrap();
                     code.push_str(&format!("\t{field_owner}->{field_name} = {float_value};\n"));

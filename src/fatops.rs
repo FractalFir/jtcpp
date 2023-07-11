@@ -14,7 +14,7 @@ fn fieldref_to_info(index: u16, class: &ImportedJavaClass) -> (VariableType, ISt
 fn methodref_to_mangled_and_argc(index: u16, class: &ImportedJavaClass) -> (IString, u8) {
     let (method_class, nametype) = class.lookup_method_ref(index).unwrap();
     let (name, descriptor) = class.lookup_nametype(nametype).unwrap();
-    let method_class = class.lookup_class(method_class).unwrap();
+    let _method_class = class.lookup_class(method_class).unwrap();
     let name = class.lookup_utf8(name).unwrap();
     let descriptor = class.lookup_utf8(descriptor).unwrap();
     let mangled = mangle_method_name(name, descriptor);
@@ -294,7 +294,7 @@ impl FatOp {
             Self::GoTo(target) => Some(smallvec![*target]),
             Self::LookupSwitch { default_op, pairs } => {
                 let mut sv = smallvec![*default_op];
-                for (key, target) in pairs.iter() {
+                for (_key, target) in pairs.iter() {
                     sv.push(*target);
                 }
                 Some(sv)
@@ -601,7 +601,7 @@ pub(crate) fn expand_ops(ops: &[(OpCode, u16)], class: &ImportedJavaClass) -> Bo
             OpCode::Pop2 => FatOp::Pop2,
             ///TODO: handle non-static methods(change argc by 1)
             OpCode::InvokeSpecial(index) => {
-                let (method_class,method_name,mut args,ret) = methodref_to_mangled_and_sig(*index, class);
+                let (method_class,method_name,args,ret) = methodref_to_mangled_and_sig(*index, class);
                 //let (method_class, _) = class.lookup_method_ref(*index).unwrap();
                // let method_class = class.lookup_class(method_class).unwrap();
                // let method_class = class_path_to_class_mangled(method_class);
@@ -621,7 +621,7 @@ pub(crate) fn expand_ops(ops: &[(OpCode, u16)], class: &ImportedJavaClass) -> Bo
             }
             OpCode::InvokeVirtual(index) => {
                 let (_,_, args,ret) = methodref_to_mangled_and_sig(*index, class);
-                let (class, name, argc) = methodref_to_partial_mangled_and_argc(*index, class);
+                let (class, name, _argc) = methodref_to_partial_mangled_and_argc(*index, class);
                 FatOp::InvokeVirtual(class,name, args.into(),ret)
             }
             OpCode::InvokeInterface(index) => {

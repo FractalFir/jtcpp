@@ -1,7 +1,7 @@
 mod attribute;
 pub mod opcodes;
 use crate::importer::attribute::BootstrapMethod;
-use crate::{class_path_to_class_mangled, desc_to_mangled, method_name_to_c_name, IString};
+use crate::{IString};
 use attribute::Attribute;
 use opcodes::OpCode;
 macro_rules! load_fn_impl {

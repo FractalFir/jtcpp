@@ -3,6 +3,7 @@ mod fatops;
 mod importer;
 mod class;
 mod method;
+mod cpp_codegen;
 use class::Class;
 use method::Method;
 macro_rules! include_stdlib_header_file {
@@ -137,8 +138,8 @@ impl VariableType {
             Self::Bool => "z".into(),
             Self::Byte => "b".into(),
             Self::Short => "s".into(),
-            Self::ObjectRef { name } => "a".into(),
-            Self::ArrayRef(atype) => "aa".into(),
+            Self::ObjectRef { name: _ } => "a".into(),
+            Self::ArrayRef(_atype) => "aa".into(),
             _ => todo!("Can't get type postifx of {self:?}!"),
         }
     }
@@ -221,7 +222,7 @@ fn method_desc_to_argc(desc: &str) -> u8 {
 fn method_desc_to_args(desc: &str) -> (Vec<VariableType>, VariableType) {
     let arg_beg = desc.chars().position(|c| c == '(').unwrap() + 1;
     let arg_end = desc.chars().position(|c| c == ')').unwrap();
-    let mut arg_desc = &desc[arg_beg..arg_end];
+    let arg_desc = &desc[arg_beg..arg_end];
     let ret_val = field_desc_str_to_ftype(desc, arg_end + 1);
     let mut within_class = false;
     let mut args = Vec::new();
@@ -268,7 +269,7 @@ impl MethodCG {
                 VariableType::ArrayRef(_)=>{
                     self.local_dec.push_str("(nullptr);\n");
                 }
-                VariableType::ObjectRef { name }=>{
+                VariableType::ObjectRef { name: _ }=>{
                     self.local_dec.push_str("(nullptr);\n");
                 }
                 _=>{
@@ -492,7 +493,7 @@ impl CompilationContext {
             let hout = std::fs::File::create(&path);
             let mut hout = match hout {
                 Ok(hout) => hout,
-                Err(err) => {
+                Err(_err) => {
                     eprintln!("\nCan't create file at {path}!", path = path.display());
                     std::process::exit(ERR_BAD_OUT);
                 }
@@ -520,7 +521,7 @@ impl CompilationContext {
                 path.push(&format!("{}_{}",class.name(),sname));
                 path.set_extension("cpp");
                 let mut cout = std::fs::File::create(path)?;
-                let mut code = smethod.codegen();
+                let code = smethod.codegen();
                 cout.write_all(&code.into_boxed_bytes())?;
             }
             for (sname, smethod) in class.virtual_methods() {
@@ -528,7 +529,7 @@ impl CompilationContext {
                 path.push(&format!("{}_{}",class.name(),sname));
                 path.set_extension("cpp");
                 let mut cout = std::fs::File::create(path)?;
-                let mut code = smethod.codegen();
+                let code = smethod.codegen();
                 cout.write_all(&code.into_boxed_bytes())?;
             }
         }
