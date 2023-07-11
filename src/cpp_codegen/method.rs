@@ -16,6 +16,7 @@ struct MethodWriter {
 }
 enum LocalKind {
     ObjectRef,
+    Float,
 }
 impl MethodWriter {
     pub(crate) fn esnsure_local_exists(&mut self, id: u8, kind: LocalKind,ctype:&str) -> IString {
@@ -29,6 +30,7 @@ impl MethodWriter {
     pub(crate) fn get_local(&self, id: u8, kind: LocalKind) -> IString {
         match kind {
             LocalKind::ObjectRef => format!("l{id}a"),
+            LocalKind::Float => format!("l{id}f"),
         }
         .into()
     }
@@ -89,6 +91,12 @@ impl MethodWriter {
         self.im_id += 1;
         im.into()
     }
+    pub(crate) fn push_locals(&mut self,local:&str,decl:&str){
+        if !self.locals.contains(local){
+            self.locals.insert(local.into());
+            self.local_decl.push_str(decl);
+        }
+    }
     pub(crate) fn vstack_pop(&mut self)->Option<(VariableType,IString)>{self.vstack.pop()}
     pub(crate) fn final_code(&self) -> IString {
         format!(
@@ -115,22 +123,67 @@ macro_rules! load_impl{
 }
 macro_rules! store_impl{
     ($mw:ident,$index:ident,$kind:expr)=>{{
-            let (vtype,value) = $mw.vstack_pop().unwrap();
-            let local = $mw.esnsure_local_exists(*$index, $kind,&vtype.c_type());
-            
+            let (vtype,value):(VariableType,IString) = $mw.vstack_pop().unwrap();
+            let local:IString = $mw.esnsure_local_exists(*$index, $kind,&vtype.c_type());
             format!("{local} = {value};")
         }
     }
 }
+macro_rules! get_field_impl {
+    ($mw:ident,$field_name:ident,$vartype:expr) => {{
+        let field_owner = $mw.vstack_pop().unwrap();
+        let im_name = $mw.get_intermidiate();
+        $mw.vstack_push(&im_name,$vartype);
+        let field_owner = field_owner.1;
+        format!(
+            "\t{ctype} {im_name} = {field_owner}->{field_name};\n",field_name = $field_name, ctype = $vartype.c_type()
+        )
+        }
+    };
+}
+macro_rules! get_static_impl {
+    ($mw:ident,$field_owner:ident,$static_name:ident,$vartype:expr) => {{
+        let im_name = $mw.get_intermidiate();
+        $mw.vstack_push(&im_name,$vartype);
+        format!(
+            "\t{ctype} {im_name} = {field_owner}::{static_name};\n",static_name = $static_name, ctype = $vartype.c_type(),field_owner = $field_owner
+        )
+        }
+    };
+}
+macro_rules! arthm_impl {
+    ($mw:ident,$vartype:expr,$op:literal) => {{
+        let (atype,a) = $mw.vstack_pop().unwrap();
+        let (btype,b) = $mw.vstack_pop().unwrap();
+        assert_eq!(atype,btype);
+        assert_eq!(atype,$vartype);
+        let im_name = $mw.get_intermidiate();
+        $mw.vstack_push(&im_name,$vartype);
+        format!(concat!("{ctype} {im} = {a}",$op,"{b};\n"),ctype = $vartype.c_type(),im = im_name,a = a, b = b)
+    }};
+}
+macro_rules! convert_impl {
+    ($mw:ident,$src_type:expr,$target:expr) => {{
+        let (src,val) = $mw.vstack_pop().unwrap();
+        assert_eq!(src,$src_type);
+        let im_name = $mw.get_intermidiate();
+        $mw.vstack_push(&im_name,$target);
+        format!("{target} {im_name} = ({target}){val}",target = $target.c_type())
+    }};
+}
 fn write_op(op: &FatOp, mw: &mut MethodWriter) {
     let code = match op {
         FatOp::ALoad(index) => load_impl!(mw,index,LocalKind::ObjectRef,VariableType::ObjectRef{name: "Unknown".into()}),
+        FatOp::FLoad(index) => load_impl!(mw,index,LocalKind::Float,VariableType::Float),
         FatOp::FConst(value)=>{
             //let constant = &format("{value}");
             mw.vstack_push(&format!("{value:.16}f"),VariableType::Float);
             "".into()
         }
+        FatOp::FGetField(_class_name, field_name) => get_field_impl!(mw,field_name,VariableType::Float),
+        FatOp::FGetStatic(class_name, field_name) => get_static_impl!(mw,class_name,field_name,VariableType::Float),
         FatOp::AStore(index) => store_impl!(mw,index,LocalKind::ObjectRef),
+        FatOp::FStore(index) => store_impl!(mw,index,LocalKind::Float),
         FatOp::FPutField(_class_name, field_name) => {
             let float_value = mw.vstack_pop().unwrap();
             let field_owner =  mw.vstack_pop().unwrap();
@@ -139,6 +192,12 @@ fn write_op(op: &FatOp, mw: &mut MethodWriter) {
             let float_value = float_value.1;
             format!("\t{field_owner}->{field_name} = {float_value};\n")
         }
+        FatOp::FAdd => arthm_impl!(mw,VariableType::Float,"+"),
+        FatOp::FSub => arthm_impl!(mw,VariableType::Float,"-"),
+        FatOp::FMul => arthm_impl!(mw,VariableType::Float,"*"),
+        FatOp::FDiv => arthm_impl!(mw,VariableType::Float,"/"),
+        FatOp::F2D => convert_impl!(mw,VariableType::Float,VariableType::Double),
+        FatOp::D2F => convert_impl!(mw,VariableType::Double,VariableType::Float),
         FatOp::FReturn | FatOp::AReturn =>{
             let value = mw.vstack_pop().unwrap().1;
             format!("return {value};")
@@ -187,6 +246,7 @@ fn write_op(op: &FatOp, mw: &mut MethodWriter) {
             code
         }
         FatOp::InvokeStatic(method_class_name, method_name, args, ret) => {
+            mw.add_include(method_class_name);
             let mut code = String::new();
             let argc = args.len();
             let mut args: Vec<IString> = Vec::with_capacity(argc);
@@ -317,6 +377,9 @@ pub(crate) fn create_method_impl(
     );
     writer.set_sig(&fn_sig);
     writer.add_include(method.class_name());
+    if method.is_virtual(){
+        writer.push_locals("loc0a", &format!("\t{class}* l0a = this;\n",class = method.class_name()));
+    }
     for bb in bb_tree.iter() {
         bb.write(&mut writer);
     }
