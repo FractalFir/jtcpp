@@ -13,7 +13,8 @@ template <typename T> class RuntimeArray : java_cs_lang_cs_Object{
       int length;
 public:
       RuntimeArray(int length);
-      T* Get(int index);
+      T Get(int index);
       void Set(int index,T data);
+      int GetLength();
 };
 #endif

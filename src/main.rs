@@ -20,6 +20,7 @@ macro_rules! include_stdlib_source_file {
 }
 include_stdlib_header_file!(java_cs_lang_cs_Object);
 include_stdlib_header_file!(java_cs_lang_cs_String);
+include_stdlib_header_file!(java_cs_lang_cs_Math);
 include_stdlib_header_file!(runtime);
 use crate::fatops::FatOp;
 use crate::importer::{BytecodeImportError, ImportedJavaClass};
@@ -118,6 +119,9 @@ impl VariableType {
             Self::ObjectRef { name } => Some(&name),
             Self::ArrayRef(var) => var.dependency(),
         }
+    }
+    fn is_array(&self)->bool{
+        if let Self::ArrayRef(_) = self{true}else{false}
     }
 }
 impl VariableType {
@@ -415,7 +419,13 @@ impl CompilationContext {
             let mut java_cs_lang_cs_String_out = std::fs::File::create(java_cs_lang_cs_String_out)?;
             java_cs_lang_cs_String_out.write_all(java_cs_lang_cs_String)?;
         }
-
+        let mut java_cs_lang_cs_Math_out = target_path.clone();
+        java_cs_lang_cs_Math_out.push("java_cs_lang_cs_Math");
+        java_cs_lang_cs_Math_out.set_extension("hpp");
+        if !java_cs_lang_cs_Math_out.exists() {
+            let mut java_cs_lang_cs_Math_out = std::fs::File::create(java_cs_lang_cs_Math_out)?;
+            java_cs_lang_cs_Math_out.write_all(java_cs_lang_cs_Math)?;
+        }
         //include_stdlib_header_file!(runtime);
         Ok(())
     }

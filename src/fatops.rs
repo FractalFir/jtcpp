@@ -413,6 +413,7 @@ pub(crate) fn expand_ops(ops: &[(OpCode, u16)], class: &ImportedJavaClass) -> Bo
             OpCode::DLoad(index) => FatOp::DLoad(*index),
             OpCode::GetStatic(index) => {
                 let (ftype, class_name, static_name) = fieldref_to_info(*index, class);
+                let class_name = crate::class_path_to_class_mangled(&class_name);
                 match ftype {
                     VariableType::Bool => FatOp::ZGetStatic(class_name, static_name),
                     VariableType::Byte => FatOp::BGetStatic(class_name, static_name),
@@ -627,6 +628,7 @@ pub(crate) fn expand_ops(ops: &[(OpCode, u16)], class: &ImportedJavaClass) -> Bo
             OpCode::InvokeStatic(index) => {
                 let (method_class_name, name, args, ret) =
                     methodref_to_mangled_and_sig(*index, class);
+                let method_class_name = crate::class_path_to_class_mangled(&method_class_name);
                 FatOp::InvokeStatic(method_class_name, name, args.into(), ret)
             }
             OpCode::InvokeVirtual(index) => {

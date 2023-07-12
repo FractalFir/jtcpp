@@ -10,7 +10,9 @@ pub(crate) struct Method {
     ret_val: VariableType,
 }
 impl Method {
-    pub(crate) fn is_virtual(&self) ->bool{self.is_virtual}
+    pub(crate) fn is_virtual(&self) -> bool {
+        self.is_virtual
+    }
     pub(crate) fn class_name(&self) -> &str {
         &self.class_name
     }

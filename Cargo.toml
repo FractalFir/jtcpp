@@ -8,5 +8,6 @@ edition = "2021"
 [dependencies]
 clap = { version = "4.3.10", features = ["derive"] }
 criterion = "0.5.1"
+include_dir = "0.7.3"
 smallvec = "1.10.0"
 zip = "0.6.6"

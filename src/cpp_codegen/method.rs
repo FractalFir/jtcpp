@@ -1,27 +1,28 @@
 use super::IncludeBuilder;
 use crate::fatops::FatOp;
 use crate::IString;
+use crate::VariableType;
 use std::collections::HashSet;
 use std::io::Write;
-use crate::VariableType;
 struct MethodWriter {
     includes: super::IncludeBuilder,
     code: String,
     sig: IString,
     ident_level: usize,
     local_decl: String,
-    vstack: Vec<(VariableType,IString)>,
+    vstack: Vec<(VariableType, IString)>,
     locals: HashSet<IString>,
-    im_id:usize,
+    im_id: usize,
 }
 enum LocalKind {
     ObjectRef,
     Float,
+    Int,
 }
 impl MethodWriter {
-    pub(crate) fn esnsure_local_exists(&mut self, id: u8, kind: LocalKind,ctype:&str) -> IString {
+    pub(crate) fn esnsure_local_exists(&mut self, id: u8, kind: LocalKind, ctype: &str) -> IString {
         let local = self.get_local(id, kind);
-        if !self.locals.contains(&local){
+        if !self.locals.contains(&local) {
             self.local_decl.push_str(&format!("\t{ctype} {local};\n"));
             self.locals.insert(local.clone());
         }
@@ -31,6 +32,7 @@ impl MethodWriter {
         match kind {
             LocalKind::ObjectRef => format!("l{id}a"),
             LocalKind::Float => format!("l{id}f"),
+            LocalKind::Int => format!("l{id}i"),
         }
         .into()
     }
@@ -46,12 +48,12 @@ impl MethodWriter {
             ident_level: 1,
             local_decl: String::new(),
             locals: HashSet::new(),
-            im_id:0,
+            im_id: 0,
         }
     }
     pub(crate) fn begin_bb(&mut self, index: usize) {
         self.write_ident();
-        self.code.push_str(&format!("bb_{index}:\n"));
+        self.code.push_str(&format!("bb{index}:\n"));
     }
     pub(crate) fn begin_scope(&mut self) {
         self.write_ident();
@@ -83,21 +85,23 @@ impl MethodWriter {
         self.code.push_str(code);
         self.code.push('\n');
     }
-    pub(crate) fn vstack_push(&mut self, vvar: &str,vtype:VariableType) {
-        self.vstack.push((vtype,vvar.into()))
+    pub(crate) fn vstack_push(&mut self, vvar: &str, vtype: VariableType) {
+        self.vstack.push((vtype, vvar.into()))
     }
-    pub(crate) fn get_intermidiate(&mut self)->IString{
-        let im = format!("i{id}",id = self.im_id);
+    pub(crate) fn get_intermidiate(&mut self) -> IString {
+        let im = format!("i{id}", id = self.im_id);
         self.im_id += 1;
         im.into()
     }
-    pub(crate) fn push_locals(&mut self,local:&str,decl:&str){
-        if !self.locals.contains(local){
+    pub(crate) fn push_locals(&mut self, local: &str, decl: &str) {
+        if !self.locals.contains(local) {
             self.locals.insert(local.into());
             self.local_decl.push_str(decl);
         }
     }
-    pub(crate) fn vstack_pop(&mut self)->Option<(VariableType,IString)>{self.vstack.pop()}
+    pub(crate) fn vstack_pop(&mut self) -> Option<(VariableType, IString)> {
+        self.vstack.pop()
+    }
     pub(crate) fn final_code(&self) -> IString {
         format!(
             "{includes}{sig}{{\n{local_decl}{code}}}",
@@ -113,112 +117,309 @@ enum BasicBlock {
     Raw { ops: Box<[FatOp]>, starts: usize },
     //Scope(Box<[BasicBlock]>),
 }
-macro_rules! load_impl{
-    ($mw:ident,$index:ident,$kind:expr,$vtype:expr)=>{{
-            let local = $mw.get_local(*$index, $kind);
-            $mw.vstack_push(&local,$vtype);
-            "".into()
-        }
-    }
+macro_rules! load_impl {
+    ($mw:ident,$index:ident,$kind:expr,$vtype:expr) => {{
+        let local = $mw.get_local(*$index, $kind);
+        $mw.vstack_push(&local, $vtype);
+        "".into()
+    }};
 }
-macro_rules! store_impl{
-    ($mw:ident,$index:ident,$kind:expr)=>{{
-            let (vtype,value):(VariableType,IString) = $mw.vstack_pop().unwrap();
-            let local:IString = $mw.esnsure_local_exists(*$index, $kind,&vtype.c_type());
-            format!("{local} = {value};")
-        }
-    }
+macro_rules! store_impl {
+    ($mw:ident,$index:ident,$kind:expr) => {{
+        let (vtype, value): (VariableType, IString) = $mw.vstack_pop().unwrap();
+        let local: IString = $mw.esnsure_local_exists(*$index, $kind, &vtype.c_type());
+        format!("{local} = {value};")
+    }};
 }
 macro_rules! get_field_impl {
     ($mw:ident,$field_name:ident,$vartype:expr) => {{
         let field_owner = $mw.vstack_pop().unwrap();
         let im_name = $mw.get_intermidiate();
-        $mw.vstack_push(&im_name,$vartype);
+        $mw.vstack_push(&im_name, $vartype);
         let field_owner = field_owner.1;
         format!(
-            "\t{ctype} {im_name} = {field_owner}->{field_name};\n",field_name = $field_name, ctype = $vartype.c_type()
+            "{ctype} {im_name} = {field_owner}->{field_name};",
+            field_name = $field_name,
+            ctype = $vartype.c_type()
         )
-        }
-    };
+    }};
+}
+macro_rules! set_field_impl {
+    ($mw:ident,$field_name:ident,$vartype:expr) => {{
+        let (valtype, value) = $mw.vstack_pop().unwrap();
+        let field_owner = $mw.vstack_pop().unwrap();
+        assert_eq!(valtype, $vartype);
+        let field_owner = field_owner.1;
+        format!(
+            "{field_owner}->{field_name} = {value};",
+            field_name = $field_name,
+        )
+    }};
+    ($mw:ident,$field_name:ident) => {{
+        let (valtype, value) = $mw.vstack_pop().unwrap();
+        let field_owner = $mw.vstack_pop().unwrap();
+        //assert_eq!(valtype,$vartype);
+        let field_owner = field_owner.1;
+        format!(
+            "{field_owner}->{field_name} = {value};",
+            field_name = $field_name,
+        )
+    }};
 }
 macro_rules! get_static_impl {
     ($mw:ident,$field_owner:ident,$static_name:ident,$vartype:expr) => {{
         let im_name = $mw.get_intermidiate();
-        $mw.vstack_push(&im_name,$vartype);
-        format!(
-            "\t{ctype} {im_name} = {field_owner}::{static_name};\n",static_name = $static_name, ctype = $vartype.c_type(),field_owner = $field_owner
-        )
+        $mw.vstack_push(&im_name, $vartype);
+        if let Some(dep) = ($vartype).dependency() {
+            $mw.add_include(dep);
         }
-    };
+        $mw.add_include($field_owner);
+        format!(
+            "{ctype} {im_name} = {field_owner}::{static_name};",
+            static_name = $static_name,
+            ctype = $vartype.c_type(),
+            field_owner = $field_owner
+        )
+    }};
+}
+macro_rules! set_static_impl {
+    ($mw:ident,$field_owner:ident,$static_name:ident,$vartype:expr) => {{
+        let (vtype, value) = $mw.vstack_pop().unwrap();
+        assert_eq!(vtype, $vartype);
+        format!(
+            "{field_owner}::{static_name} = {value};",
+            static_name = $static_name,
+            field_owner = $field_owner
+        )
+    }};
 }
 macro_rules! arthm_impl {
     ($mw:ident,$vartype:expr,$op:literal) => {{
-        let (atype,a) = $mw.vstack_pop().unwrap();
-        let (btype,b) = $mw.vstack_pop().unwrap();
-        assert_eq!(atype,btype);
-        assert_eq!(atype,$vartype);
+        let (btype, b) = $mw.vstack_pop().unwrap();
+        let (atype, a) = $mw.vstack_pop().unwrap();
+        assert_eq!(atype, btype);
+        assert_eq!(atype, $vartype);
         let im_name = $mw.get_intermidiate();
-        $mw.vstack_push(&im_name,$vartype);
-        format!(concat!("{ctype} {im} = {a}",$op,"{b};\n"),ctype = $vartype.c_type(),im = im_name,a = a, b = b)
+        $mw.vstack_push(&im_name, $vartype);
+        format!(
+            concat!("{ctype} {im} = {a}", $op, "{b};"),
+            ctype = $vartype.c_type(),
+            im = im_name,
+            a = a,
+            b = b
+        )
     }};
 }
 macro_rules! convert_impl {
     ($mw:ident,$src_type:expr,$target:expr) => {{
-        let (src,val) = $mw.vstack_pop().unwrap();
-        assert_eq!(src,$src_type);
+        let (src, val) = $mw.vstack_pop().unwrap();
+        assert_eq!(src, $src_type);
         let im_name = $mw.get_intermidiate();
-        $mw.vstack_push(&im_name,$target);
-        format!("{target} {im_name} = ({target}){val}",target = $target.c_type())
+        $mw.vstack_push(&im_name, $target);
+        format!(
+            "{target} {im_name} = ({target}){val};",
+            target = $target.c_type()
+        )
+    }};
+}
+macro_rules! conditional_impl {
+    ($mw:ident,$cmp:literal,$target:ident) => {{
+        let (btype, b) = $mw.vstack_pop().unwrap();
+        let (atype, a) = $mw.vstack_pop().unwrap();
+        //TODO: Consider chaecking types!
+        format!(
+            concat!("if({a}", $cmp, "{b}) goto bb{target};"),
+            a = a,
+            b = b,
+            target = $target
+        )
     }};
 }
 fn write_op(op: &FatOp, mw: &mut MethodWriter) {
     let code = match op {
-        FatOp::ALoad(index) => load_impl!(mw,index,LocalKind::ObjectRef,VariableType::ObjectRef{name: "Unknown".into()}),
-        FatOp::FLoad(index) => load_impl!(mw,index,LocalKind::Float,VariableType::Float),
-        FatOp::FConst(value)=>{
+        FatOp::ALoad(index) => load_impl!(
+            mw,
+            index,
+            LocalKind::ObjectRef,
+            VariableType::ObjectRef {
+                name: "Unknown".into()
+            }
+        ),
+        FatOp::FLoad(index) => load_impl!(mw, index, LocalKind::Float, VariableType::Float),
+        FatOp::ILoad(index) => load_impl!(mw, index, LocalKind::Int, VariableType::Int),
+        FatOp::FConst(value) => {
             //let constant = &format("{value}");
-            mw.vstack_push(&format!("{value:.16}f"),VariableType::Float);
+            mw.vstack_push(&format!("{value:.16}f"), VariableType::Float);
             "".into()
         }
-        FatOp::FGetField(_class_name, field_name) => get_field_impl!(mw,field_name,VariableType::Float),
-        FatOp::FGetStatic(class_name, field_name) => get_static_impl!(mw,class_name,field_name,VariableType::Float),
-        FatOp::AStore(index) => store_impl!(mw,index,LocalKind::ObjectRef),
-        FatOp::FStore(index) => store_impl!(mw,index,LocalKind::Float),
-        FatOp::FPutField(_class_name, field_name) => {
-            let float_value = mw.vstack_pop().unwrap();
-            let field_owner =  mw.vstack_pop().unwrap();
-            assert_eq!(float_value.0,VariableType::Float);
-            let field_owner = field_owner.1;
-            let float_value = float_value.1;
-            format!("\t{field_owner}->{field_name} = {float_value};\n")
+        FatOp::IConst(value) => {
+            //let constant = &format("{value}");
+            mw.vstack_push(&format!("{value:}"), VariableType::Int);
+            "".into()
         }
-        FatOp::FAdd => arthm_impl!(mw,VariableType::Float,"+"),
-        FatOp::FSub => arthm_impl!(mw,VariableType::Float,"-"),
-        FatOp::FMul => arthm_impl!(mw,VariableType::Float,"*"),
-        FatOp::FDiv => arthm_impl!(mw,VariableType::Float,"/"),
-        FatOp::F2D => convert_impl!(mw,VariableType::Float,VariableType::Double),
-        FatOp::D2F => convert_impl!(mw,VariableType::Double,VariableType::Float),
-        FatOp::FReturn | FatOp::AReturn =>{
+        FatOp::SConst(value) => {
+            //let constant = &format("{value}");
+            mw.vstack_push(&format!("{value:}"), VariableType::Int);
+            "".into()
+        }
+        FatOp::AGetField {
+            class_name,
+            field_name,
+            type_name,
+        } => get_field_impl!(
+            mw,
+            field_name,
+            VariableType::ObjectRef {
+                name: type_name.clone()
+            }
+        ),
+        FatOp::FGetField(_class_name, field_name) => {
+            get_field_impl!(mw, field_name, VariableType::Float)
+        }
+        FatOp::AGetStatic {
+            class_name,
+            static_name,
+            type_name,
+        } => get_static_impl!(
+            mw,
+            class_name,
+            static_name,
+            VariableType::ObjectRef {
+                name: type_name.clone()
+            }
+        ),
+        FatOp::AAGetField {
+            class_name,
+            field_name,
+            atype,
+        } => get_field_impl!(mw, field_name,VariableType::ArrayRef(Box::new(atype.clone()))), //TODO: fix vstack type issues, readd ``
+        FatOp::FGetStatic(class_name, static_name) => {
+            get_static_impl!(mw, class_name, static_name, VariableType::Float)
+        }
+        FatOp::AAStore=>{
+            let (value_type, value) = mw.vstack_pop().unwrap();
+            let (index_type, index) = mw.vstack_pop().unwrap();
+            let (arr_ref_type, arr_ref) = mw.vstack_pop().unwrap();
+            assert!(arr_ref_type.is_array());
+            assert_eq!(index_type,VariableType::Int);
+            format!("{arr_ref}->Set({index},{value});")
+        }
+        FatOp::AALoad=>{
+            let (index_type, index) = mw.vstack_pop().unwrap();
+            let (arr_ref_type, arr_ref) = mw.vstack_pop().unwrap();
+            assert!(arr_ref_type.is_array());
+            assert_eq!(index_type,VariableType::Int);
+            let im_name = mw.get_intermidiate();
+            mw.vstack_push(&im_name, VariableType::ObjectRef { name: "unknown".into() });
+            format!("auto {im_name} = {arr_ref}->Get({index});")
+        }
+        FatOp::ArrayLength=>{
+            let (arr_ref_type, arr_ref) = mw.vstack_pop().unwrap();
+            let im_name = mw.get_intermidiate();
+            mw.vstack_push(&im_name, VariableType::Int);
+            format!("int {im_name} = {arr_ref}->GetLength();")
+        }
+        FatOp::AStore(index) => store_impl!(mw, index, LocalKind::ObjectRef),
+        FatOp::FStore(index) => store_impl!(mw, index, LocalKind::Float),
+        FatOp::IStore(index) => store_impl!(mw, index, LocalKind::Int),
+        FatOp::APutField {
+            class_name,
+            field_name,
+            type_name,
+        } => set_field_impl!(
+            mw,
+            field_name,
+            VariableType::ObjectRef {
+                name: type_name.clone()
+            }
+        ),
+        FatOp::AAPutField {
+            class_name,
+            field_name,
+            atype,
+        } => set_field_impl!(mw, field_name), //TODO: fix vstack type issues, readd `VariableType::ArrayRef(Box::new(atype.clone()))`
+        FatOp::FPutField(_class_name, field_name) => {
+            set_field_impl!(mw, field_name, VariableType::Float)
+        }
+        FatOp::APutStatic {
+            class_name,
+            field_name,
+            type_name,
+        } => set_static_impl!(
+            mw,
+            field_name,
+            class_name,
+            VariableType::ObjectRef {
+                name: type_name.clone()
+            }
+        ),
+        FatOp::FPutStatic(class_name, field_name) => {
+            set_static_impl!(mw, class_name, field_name, VariableType::Float)
+        }
+        FatOp::FAdd => arthm_impl!(mw, VariableType::Float, "+"),
+        FatOp::FSub => arthm_impl!(mw, VariableType::Float, "-"),
+        FatOp::FMul => arthm_impl!(mw, VariableType::Float, "*"),
+        FatOp::FDiv => arthm_impl!(mw, VariableType::Float, "/"),
+        FatOp::IInc(local, by) => {
+            let local = mw.get_local(*local, LocalKind::Int);
+            format!("{local} += {by};")
+        }
+        FatOp::FRem => {
+            let (btype, b) = mw.vstack_pop().unwrap();
+            let (atype, a) = mw.vstack_pop().unwrap();
+            assert_eq!(atype, btype);
+            assert_eq!(atype, VariableType::Float);
+            let im_name = mw.get_intermidiate();
+            mw.vstack_push(&im_name, VariableType::Float);
+            format!("float {im_name} = fmod({a},{b});")
+        }
+        FatOp::F2D => convert_impl!(mw, VariableType::Float, VariableType::Double),
+        FatOp::D2F => convert_impl!(mw, VariableType::Double, VariableType::Float),
+        FatOp::FReturn | FatOp::AReturn => {
             let value = mw.vstack_pop().unwrap().1;
             format!("return {value};")
         }
         FatOp::Return => "return;".into(),
-        FatOp::Dup =>{
+        FatOp::IfIGreterEqual(target) => conditional_impl!(mw, ">=", target),
+        FatOp::IfICmpNe(target) => conditional_impl!(mw, "!=", target),
+        FatOp::GoTo(target) => format!("goto bb{target};"),
+        FatOp::Dup => {
             let value = mw.vstack_pop().unwrap();
-            mw.vstack_push(&value.1,value.0.clone());
-            mw.vstack_push(&value.1,value.0.clone());
+            mw.vstack_push(&value.1, value.0.clone());
+            mw.vstack_push(&value.1, value.0.clone());
             "".into()
         }
-        FatOp::New(name)=>{
+        FatOp::Pop => {
+            let _ = mw.vstack_pop().unwrap();
+            "".into()
+        }
+        FatOp::New(name) => {
             let im = mw.get_intermidiate();
-            mw.vstack_push(&im,VariableType::ObjectRef { name:name.clone() });
+            mw.vstack_push(&im, VariableType::ObjectRef { name: name.clone() });
             format!("{name}* {im} = new {name}();")
+        }
+        FatOp::ANewArray(name) => {
+            let im = mw.get_intermidiate();
+            let (length_type,length) = mw.vstack_pop().unwrap();
+            assert_eq!(length_type,VariableType::Int);
+            mw.vstack_push(&im, VariableType::ObjectRef { name: name.clone() });
+            format!("RuntimeArray<{name}*>* {im} = new RuntimeArray<{name}*>({length});")
+        }
+        FatOp::StringConst(const_string) => {
+            let im_name = mw.get_intermidiate();
+            mw.vstack_push(
+                &im_name,
+                VariableType::ObjectRef {
+                    name: "java_cs_lang_cs_String".into(),
+                },
+            );
+            format!("java_cs_lang_cs_String* {im_name} = new java_cs_lang_cs_String(u\"{const_string}\");")
         }
         FatOp::InvokeVirtual(_class_name, vmethod_name, args, ret) => {
             let mut code = String::new();
             let argc = args.len();
             let mut args: Vec<IString> = Vec::with_capacity(argc);
-            for _ in 0..(argc + 1){
+            for _ in 0..(argc + 1) {
                 args.push(mw.vstack_pop().unwrap().1);
             }
             args.reverse();
@@ -232,7 +433,7 @@ fn write_op(op: &FatOp, mw: &mut MethodWriter) {
                     "{ret} {im_name} = {objref}->{vmethod_name}(",
                     ret = ret.c_type()
                 ));
-                mw.vstack_push(&im_name,ret.clone());
+                mw.vstack_push(&im_name, ret.clone());
             }
             match args.next() {
                 Some(arg) => code.push_str(arg),
@@ -250,7 +451,7 @@ fn write_op(op: &FatOp, mw: &mut MethodWriter) {
             let mut code = String::new();
             let argc = args.len();
             let mut args: Vec<IString> = Vec::with_capacity(argc);
-            for _ in 0..argc{
+            for _ in 0..argc {
                 args.push(mw.vstack_pop().unwrap().1);
             }
             args.reverse();
@@ -263,7 +464,7 @@ fn write_op(op: &FatOp, mw: &mut MethodWriter) {
                     "{ret} {im_name} = {method_class_name}::{method_name}(",
                     ret = ret.c_type()
                 ));
-                mw.vstack_push(&im_name,ret.clone());
+                mw.vstack_push(&im_name, ret.clone());
             }
             match args.next() {
                 Some(arg) => code.push_str(arg),
@@ -339,7 +540,7 @@ fn fat_ops_to_bb_tree(fatops: &[FatOp]) -> Box<[BasicBlock]> {
         .collect()
 }
 fn push_method_sig_args(target: &mut String, method_name: &str, method: &crate::Method) {
-    let mut curr_id = if method.is_virtual(){1}else{0};
+    let mut curr_id = if method.is_virtual() { 1 } else { 0 };
     target.push_str(&format!(
         "{ret} {method_name}(",
         ret = method.ret_val().c_type()
@@ -348,13 +549,21 @@ fn push_method_sig_args(target: &mut String, method_name: &str, method: &crate::
     //println!("\n\t{name}::{method_name}->{margs:?}",name = self.name);
     match margs.next() {
         Some(arg) => {
-            target.push_str(&format!("{ctype} l{curr_id}{postfix}",ctype = &arg.c_type(),postfix = arg.type_postifx()));
+            target.push_str(&format!(
+                "{ctype} l{curr_id}{postfix}",
+                ctype = &arg.c_type(),
+                postfix = arg.type_postifx()
+            ));
             curr_id += 1;
-        },
+        }
         None => (),
     }
     for arg in margs {
-        target.push_str(&format!(",{ctype} l{curr_id}{postfix}",ctype = &arg.c_type(),postfix = arg.type_postifx()));
+        target.push_str(&format!(
+            ",{ctype} l{curr_id}{postfix}",
+            ctype = &arg.c_type(),
+            postfix = arg.type_postifx()
+        ));
         curr_id += 1;
     }
     target.push_str(")");
@@ -377,8 +586,11 @@ pub(crate) fn create_method_impl(
     );
     writer.set_sig(&fn_sig);
     writer.add_include(method.class_name());
-    if method.is_virtual(){
-        writer.push_locals("loc0a", &format!("\t{class}* l0a = this;\n",class = method.class_name()));
+    if method.is_virtual() {
+        writer.push_locals(
+            "loc0a",
+            &format!("\t{class}* l0a = this;\n", class = method.class_name()),
+        );
     }
     for bb in bb_tree.iter() {
         bb.write(&mut writer);

@@ -254,7 +254,7 @@ pub(crate) fn load_ops<R: std::io::Read>(
             0x3a => {
                 let index = load_u8(src)?;
                 curr_offset += 1;
-                OpCode::IStore(index)
+                OpCode::AStore(index)
             }
             0x37 => {
                 let index = load_u8(src)?;
