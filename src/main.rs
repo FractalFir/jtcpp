@@ -5,23 +5,9 @@ mod fatops;
 mod importer;
 mod method;
 use class::Class;
+use include_dir::{include_dir, Dir};
 use method::Method;
-macro_rules! include_stdlib_header_file {
-    ($file_name:ident) => {
-        const $file_name: &[u8] =
-            include_bytes!(concat!("../stdlib/", stringify!($file_name), ".hpp"));
-    };
-}
-macro_rules! include_stdlib_source_file {
-    ($file_name:ident) => {
-        const $file_name: &[u8] =
-            include_bytes!(concat!("../stdlib/", stringify!($file_name), ".cpp"));
-    };
-}
-include_stdlib_header_file!(java_cs_lang_cs_Object);
-include_stdlib_header_file!(java_cs_lang_cs_String);
-include_stdlib_header_file!(java_cs_lang_cs_Math);
-include_stdlib_header_file!(runtime);
+static STDLIB_DIR: Dir<'_> = include_dir!("$CARGO_MANIFEST_DIR/stdlib");
 use crate::fatops::FatOp;
 use crate::importer::{BytecodeImportError, ImportedJavaClass};
 use clap::Parser;
@@ -249,115 +235,6 @@ fn method_desc_to_args(desc: &str) -> (Vec<VariableType>, VariableType) {
     println!("desc:{desc:?} args:{args:?}");
     (args, ret_val)
 }
-
-use std::collections::HashSet;
-struct MethodCG {
-    includes: String,
-    class_name: IString,
-    fn_name: IString,
-    signature: IString,
-    local_dec: String,
-    locals: HashSet<IString>,
-    im_idx: usize,
-    code: String,
-}
-impl MethodCG {
-    fn add_include(&mut self, file: &str) {
-        //TODO:Handle double includes!
-        self.includes.push_str("#include \"");
-        self.includes.push_str(file);
-        self.includes.push_str(".hpp\"\n");
-    }
-    fn ensure_exists(&mut self, varname: &str, vartype: &VariableType) {
-        let varname: IString =
-            format!("{varname}{postfix}", postfix = vartype.type_postifx()).into();
-        if !self.locals.contains(&varname) {
-            let ctype = vartype.c_type();
-            self.local_dec.push_str(&format!("\t{ctype} {varname}"));
-            match vartype {
-                VariableType::ArrayRef(_) => {
-                    self.local_dec.push_str("(nullptr);\n");
-                }
-                VariableType::ObjectRef { name: _ } => {
-                    self.local_dec.push_str("(nullptr);\n");
-                }
-                _ => {
-                    self.local_dec.push_str(";\n");
-                }
-            }
-            self.locals.insert(varname);
-        }
-    }
-    fn ensure_exists_auto(&mut self, varname: &str) {
-        if !self.locals.contains(varname) {
-            self.local_dec.push_str(&format!("\tauto {varname};\n"));
-            self.locals.insert(varname.into());
-        }
-    }
-    fn put_bb(&mut self, code: IString, beg_idx: usize) {
-        self.code.push_str(&format!("\tbb_{beg_idx}:\n"));
-        self.code.push_str(&code);
-    }
-    fn new(
-        args: &[VariableType],
-        fn_name: &str,
-        class_name: &str,
-        ret_val: VariableType,
-        is_virtual: bool,
-    ) -> Self {
-        let locals = HashSet::new();
-        let mut local_dec = String::new();
-        if is_virtual {
-            local_dec.push_str(&format!("\tstd::shared_ptr<{class_name}> loc0a = std::static_pointer_cast<{class_name}>(this->shared_from_this());\n",class_name = class_name));
-        }
-        let mut sig = format!("{ret} {class_name}::{fn_name}(", ret = ret_val.c_type());
-        let mut arg_iter = args.iter();
-        let mut arg_index = 0;
-        if is_virtual {
-            arg_index += 1;
-        }
-        if let Some(arg) = arg_iter.next() {
-            let ctype = arg.c_type();
-            let postifx = arg.type_postifx();
-            println!("{ctype} loc{arg_index}{postifx}");
-            sig.push_str(&format!("{ctype} loc{arg_index}{postifx}"));
-            arg_index += 1;
-        }
-        for arg in arg_iter {
-            let ctype = arg.c_type();
-            let postifx = arg.type_postifx();
-            sig.push_str(&format!(",{ctype} loc{arg_index}{postifx}"));
-            arg_index += 1;
-        }
-        sig.push(')');
-        let includes = format!("#include \"{class_name}.hpp\"\n");
-        Self {
-            signature: sig.into(),
-            class_name: class_name.into(),
-            local_dec,
-            locals,
-            im_idx: 0,
-            code: String::new(),
-            fn_name: fn_name.into(),
-            includes,
-        }
-    }
-    fn get_im_name(&mut self) -> IString {
-        let im_name = format!("i{}", self.im_idx);
-        self.im_idx += 1;
-        im_name.into()
-    }
-    fn final_code(self) -> IString {
-        format!(
-            "{includes}{signature}{{\n{local_dec}{code}}}",
-            includes = self.includes,
-            signature = self.signature,
-            local_dec = self.local_dec,
-            code = self.code
-        )
-        .into()
-    }
-}
 #[derive(Debug, Parser)]
 #[command(author, version, about, long_about = None)]
 struct ConvertionArgs {
@@ -391,36 +268,14 @@ fn print_progress(curr: usize, whole: usize) {
 }
 impl CompilationContext {
     fn write_stdlib(target_path: &PathBuf) -> std::io::Result<()> {
-        //java_cs_lang_cs_Object;
-        let mut object_out = target_path.clone();
-        object_out.push("java_cs_lang_cs_Object");
-        object_out.set_extension("hpp");
-        if !object_out.exists() {
-            let mut object_out = std::fs::File::create(object_out)?;
-            object_out.write_all(java_cs_lang_cs_Object)?;
+        for file in STDLIB_DIR.files() {
+            let mut target_path = target_path.clone();
+            target_path.extend(file.path());
+            if !target_path.exists() {
+                let mut target_out = std::fs::File::create(target_path)?;
+                target_out.write_all(file.contents())?;
+            }
         }
-        let mut runtime_out = target_path.clone();
-        runtime_out.push("runtime");
-        runtime_out.set_extension("hpp");
-        if !runtime_out.exists() {
-            let mut runtime_out = std::fs::File::create(runtime_out)?;
-            runtime_out.write_all(runtime)?;
-        }
-        let mut java_cs_lang_cs_String_out = target_path.clone();
-        java_cs_lang_cs_String_out.push("java_cs_lang_cs_String");
-        java_cs_lang_cs_String_out.set_extension("hpp");
-        if !java_cs_lang_cs_String_out.exists() {
-            let mut java_cs_lang_cs_String_out = std::fs::File::create(java_cs_lang_cs_String_out)?;
-            java_cs_lang_cs_String_out.write_all(java_cs_lang_cs_String)?;
-        }
-        let mut java_cs_lang_cs_Math_out = target_path.clone();
-        java_cs_lang_cs_Math_out.push("java_cs_lang_cs_Math");
-        java_cs_lang_cs_Math_out.set_extension("hpp");
-        if !java_cs_lang_cs_Math_out.exists() {
-            let mut java_cs_lang_cs_Math_out = std::fs::File::create(java_cs_lang_cs_Math_out)?;
-            java_cs_lang_cs_Math_out.write_all(java_cs_lang_cs_Math)?;
-        }
-        //include_stdlib_header_file!(runtime);
         Ok(())
     }
     fn new(ca: &ConvertionArgs) -> Result<Self, BytecodeImportError> {

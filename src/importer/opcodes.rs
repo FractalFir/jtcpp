@@ -143,7 +143,6 @@ pub(crate) enum OpCode {
     DCmpG, //Compare two doubles. Push 0 if same, 1 if a > b, -1 if b > a, and 1 if a or b is NaN.
     MonitorEnter,
     MonitorExit,
-    Reserved, // Should never appear, sign of error.
     LookupSwitch(Box<LookupSwitch>),
 }
 ///Separate to decrease footprint of individual OP.

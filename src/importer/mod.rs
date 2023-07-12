@@ -137,6 +137,7 @@ impl Method {
         })
     }
 }
+
 pub(crate) struct ImportedJavaClass {
     const_items: Box<[ConstantItem]>,
     //name: IString,

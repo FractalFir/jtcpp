@@ -405,6 +405,7 @@ fn write_op(op: &FatOp, mw: &mut MethodWriter) {
         FatOp::New(name) => {
             let im = mw.get_intermidiate();
             mw.vstack_push(&im, VariableType::ObjectRef { name: name.clone() });
+            mw.add_include(name);
             format!("{name}* {im} = new {name}();")
         }
         FatOp::ANewArray(name) => {
@@ -416,6 +417,7 @@ fn write_op(op: &FatOp, mw: &mut MethodWriter) {
         }
         FatOp::StringConst(const_string) => {
             let im_name = mw.get_intermidiate();
+            mw.add_include("java_cs_lang_cs_String");
             mw.vstack_push(
                 &im_name,
                 VariableType::ObjectRef {

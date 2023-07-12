@@ -1,8 +1,8 @@
 #pragma once
 #ifndef java_cs_lang_cs_Object_H
 #define java_cs_lang_cs_Object_H 
-#include "runtime.hpp"
 #include <memory>
+#include <cmath>  
 //TEMPORARY!!
 struct gc{};
 struct java_cs_lang_cs_Object : gc{
@@ -12,9 +12,18 @@ template <typename T> class RuntimeArray : java_cs_lang_cs_Object{
       T* data;
       int length;
 public:
-      RuntimeArray(int length);
-      T Get(int index);
-      void Set(int index,T data);
-      int GetLength();
+      RuntimeArray(int length){
+            this->data = new T[length];
+            this->length = length;
+      }
+      T Get(int index){
+            return this->data[index];
+      }
+      void Set(int index,T data){
+            this->data[index] = value;
+      }
+      int GetLength(){
+            return this->length;
+      }
 };
 #endif
