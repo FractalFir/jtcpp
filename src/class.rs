@@ -71,11 +71,11 @@ impl Class {
         for method in java_class.methods() {
             if method.is_virtual(java_class) || method.name(java_class).contains("<init>") {
                 let mangled_name = method.virtual_name(java_class);
-                let method = Method::from_raw_method(&method, &mangled_name, &java_class);
+                let method = Method::from_raw_method(method, &mangled_name, java_class);
                 virtual_methods.push((mangled_name, method));
             } else {
                 let mangled_name = method.mangled_name(java_class);
-                let method = Method::from_raw_method(&method, &mangled_name, &java_class);
+                let method = Method::from_raw_method(method, &mangled_name, java_class);
                 static_methods.push((mangled_name, method));
             }
         }

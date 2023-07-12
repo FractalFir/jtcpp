@@ -28,7 +28,6 @@ use clap::Parser;
 use std::io::Write;
 use std::path::PathBuf;
 pub type IString = Box<str>;
-use basic_block::BasicBlock;
 fn method_name_to_c_name(method_name: &str) -> IString {
     match method_name {
         "<init>" => "_init_".into(),
@@ -39,10 +38,9 @@ fn method_name_to_c_name(method_name: &str) -> IString {
 fn class_path_to_class_mangled(class_path: &str) -> IString {
     let mut out = String::with_capacity(class_path.len());
     let mut sequences = class_path.split('/');
-    match sequences.next() {
-        Some(prefix) => out.push_str(prefix),
-        None => (),
-    }
+    if let Some(prefix) = sequences.next() {
+        out.push_str(prefix)
+    };
     for seq in sequences {
         out.push_str("_cs_");
         out.push_str(seq)
@@ -116,12 +114,12 @@ impl VariableType {
             | Self::Long
             | Self::Float
             | Self::Double => None,
-            Self::ObjectRef { name } => Some(&name),
+            Self::ObjectRef { name } => Some(name),
             Self::ArrayRef(var) => var.dependency(),
         }
     }
-    fn is_array(&self)->bool{
-        if let Self::ArrayRef(_) = self{true}else{false}
+    fn is_array(&self) -> bool {
+        matches!(self, Self::ArrayRef(_))
     }
 }
 impl VariableType {
@@ -170,8 +168,7 @@ pub(crate) fn field_desc_str_to_ftype(desc_str: &str, th: usize) -> VariableType
                 desc_str[(th + 1)..(desc_str.len() - 1)]
                     .split(';')
                     .next()
-                    .unwrap()
-                    .into(),
+                    .unwrap(),
             ),
         },
         '[' => VariableType::ArrayRef(Box::new(field_desc_str_to_ftype(desc_str, th + 1))),
@@ -199,7 +196,7 @@ fn arg_counter() {
     assert_eq!(method_desc_to_argc("([[[D)V"), 1);
 }
 fn method_desc_to_argc(desc: &str) -> u8 {
-    assert_eq!(desc.chars().nth(0), Some('('));
+    assert_eq!(desc.chars().next(), Some('('));
     let mut char_beg = 0;
     let mut char_end = 0;
     for (index, character) in desc.chars().enumerate() {
@@ -288,7 +285,7 @@ impl MethodCG {
                     self.local_dec.push_str(";\n");
                 }
             }
-            self.locals.insert(varname.into());
+            self.locals.insert(varname);
         }
     }
     fn ensure_exists_auto(&mut self, varname: &str) {
@@ -319,15 +316,12 @@ impl MethodCG {
         if is_virtual {
             arg_index += 1;
         }
-        match arg_iter.next() {
-            Some(arg) => {
-                let ctype = arg.c_type();
-                let postifx = arg.type_postifx();
-                println!("{ctype} loc{arg_index}{postifx}");
-                sig.push_str(&format!("{ctype} loc{arg_index}{postifx}"));
-                arg_index += 1;
-            }
-            None => (),
+        if let Some(arg) = arg_iter.next() {
+            let ctype = arg.c_type();
+            let postifx = arg.type_postifx();
+            println!("{ctype} loc{arg_index}{postifx}");
+            sig.push_str(&format!("{ctype} loc{arg_index}{postifx}"));
+            arg_index += 1;
         }
         for arg in arg_iter {
             let ctype = arg.c_type();
@@ -478,7 +472,7 @@ impl CompilationContext {
         let mut classes = Vec::with_capacity(loaded_classes.len());
         for (index, class) in loaded_classes.iter().enumerate() {
             print_progress(index, loaded_classes.len());
-            classes.push(Class::from_java_class(&class));
+            classes.push(Class::from_java_class(class));
         }
         println!("\r Finished stage 2(Conversion) of JVM bytecode to C++ translation.");
         std::fs::create_dir_all(&ca.out).unwrap();
@@ -519,14 +513,14 @@ impl CompilationContext {
                 path.push(&format!("{}_{}", class.name(), sname));
                 path.set_extension("cpp");
                 let mut cout = std::fs::File::create(path)?;
-                cpp_codegen::create_method_impl(&mut cout, smethod);
+                cpp_codegen::create_method_impl(&mut cout, smethod)?;
             }
             for (sname, smethod) in class.virtual_methods() {
                 let mut path = ca.out.clone();
                 path.push(&format!("{}_{}", class.name(), sname));
                 path.set_extension("cpp");
                 let mut cout = std::fs::File::create(path)?;
-                cpp_codegen::create_method_impl(&mut cout, smethod);
+                cpp_codegen::create_method_impl(&mut cout, smethod)?;
             }
         }
         println!(

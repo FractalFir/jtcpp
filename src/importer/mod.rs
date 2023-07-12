@@ -13,7 +13,7 @@ macro_rules! load_fn_impl {
         }
     };
 }
-load_fn_impl!(load_u64, u64);
+//load_fn_impl!(load_u64, u64);
 load_fn_impl!(load_i64, i64);
 load_fn_impl!(load_f64, f64);
 load_fn_impl!(load_i32, i32);
@@ -77,6 +77,7 @@ impl Method {
             true
         }
     }
+    /*
     pub(crate) fn access_flags(&self) -> &AccessFlags {
         &self.access_flags
     }
@@ -100,7 +101,7 @@ impl Method {
             };
         }
         None
-    }
+    }*/
     pub(crate) fn bytecode(&self) -> Option<&[(OpCode, u16)]> {
         for attribute in self.attributes.iter() {
             if let Attribute::Code {
@@ -201,7 +202,7 @@ impl ImportedJavaClass {
     pub(crate) fn lookup_utf8(&self, utf8: u16) -> Option<&str> {
         let utf8 = &self.const_items[utf8 as usize - 1];
         if let ConstantItem::Utf8(string) = utf8 {
-            Some(&string)
+            Some(string)
         } else {
             None
         }
@@ -392,7 +393,7 @@ impl ConstantItem {
         let tag = load_u8(src)?;
         //println!("tag:{tag}");
         match tag {
-            0 => return Err(ConstantImportError::ZeroTypeConstError),
+            0 => Err(ConstantImportError::ZeroTypeConstError),
             1 => {
                 let length = load_u16(src)?;
                 let mut bytes = vec![0; length as usize];
@@ -506,7 +507,7 @@ pub(crate) fn load_class<R: std::io::Read>(
     }
     let minor = load_u16(src)?;
     let major = load_u16(src)?;
-    if major < 50 || major > 64 || minor != 0 {
+    if !(50..=64).contains(&major) || minor != 0 {
         return Err(BytecodeImportError::UnsuportedVersion(major, minor));
     }
     let constant_pool_count = load_u16(src)?;
@@ -626,7 +627,7 @@ pub(crate) fn load_jar(
                     use std::io::Seek;
                     let dump_path = format!("target/testres/{}", file_name);
 
-                    std::fs::create_dir_all(&dump_path.split('.').next().unwrap())?;
+                    std::fs::create_dir_all(dump_path.split('.').next().unwrap())?;
                     println!("{dump_path}");
                     let mut out = std::fs::File::create(dump_path).unwrap();
                     file.rewind().unwrap();
@@ -638,7 +639,6 @@ pub(crate) fn load_jar(
         }
         if ext == "jar" {
             //println!("Filename: {}", file.name());
-            use std::io::Read;
             // TODO fix this stupidness, may need to write an issue to request ZipFile to implement Seek.
             let mut tmp = Vec::new();
             file.read_to_end(&mut tmp)?;
@@ -651,5 +651,5 @@ pub(crate) fn load_jar(
 #[test]
 fn load_ident_class() {
     let mut file = std::fs::File::open("test/Identity.class").unwrap();
-    let class = load_class(&mut file).unwrap();
+    let _class = load_class(&mut file).unwrap();
 }

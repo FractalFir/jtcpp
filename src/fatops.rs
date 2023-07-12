@@ -21,7 +21,7 @@ fn methodref_to_mangled_and_argc(index: u16, class: &ImportedJavaClass) -> (IStr
     let descriptor = class.lookup_utf8(descriptor).unwrap();
     let mangled = mangle_method_name(name, descriptor);
     //let method_id = self.code_container.lookup_or_insert_method(&mangled);
-    let argc = method_desc_to_argc(&descriptor);
+    let argc = method_desc_to_argc(descriptor);
     (mangled, argc)
 }
 fn methodref_to_mangled_and_sig(
@@ -49,7 +49,7 @@ fn methodref_to_partial_mangled_and_argc(
     let descriptor = class.lookup_utf8(descriptor).unwrap();
     let mangled = mangle_method_name_partial(name, descriptor);
     //let method_id = self.code_container.lookup_or_insert_method(&mangled);
-    let argc = method_desc_to_argc(&descriptor);
+    let argc = method_desc_to_argc(descriptor);
     (method_class.into(), mangled, argc)
 }
 #[derive(Debug, Clone)]
@@ -90,7 +90,6 @@ pub(crate) enum FatOp {
     IRem,
     LRem,
     IShr,
-    LShr,
     IShl,
     LShl,
     DDiv,
@@ -235,7 +234,6 @@ pub(crate) enum FatOp {
     IAStore,
     LAStore,
     SAStore,
-    ZAStore,
     AALoad,
     BALoad,
     CALoad,
@@ -244,7 +242,6 @@ pub(crate) enum FatOp {
     IALoad,
     LALoad,
     SALoad,
-    ZALoad,
     LCmp,
     FCmpL,
     FCmpG,
@@ -261,7 +258,6 @@ pub(crate) enum FatOp {
     IfNull(usize),
     IfNotNull(usize),
     IfZero(usize),
-    IfNotZero(usize),
     IfICmpNe(usize),
     IfICmpEq(usize),
     IfACmpNe(usize),
@@ -290,7 +286,6 @@ impl FatOp {
             Self::IfNull(target) => Some(smallvec![*target]),
             Self::IfNotNull(target) => Some(smallvec![*target]),
             Self::IfZero(target) => Some(smallvec![*target]),
-            Self::IfNotZero(target) => Some(smallvec![*target]),
             Self::IfICmpNe(target) => Some(smallvec![*target]),
             Self::IfICmpEq(target) => Some(smallvec![*target]),
             Self::IfACmpNe(target) => Some(smallvec![*target]),
@@ -373,7 +368,6 @@ pub(crate) fn expand_ops(ops: &[(OpCode, u16)], class: &ImportedJavaClass) -> Bo
             OpCode::IRem => FatOp::IRem,
             OpCode::LRem => FatOp::LRem,
             OpCode::IShr => FatOp::IShr,
-            OpCode::LShr => FatOp::LShr,
             OpCode::IShl => FatOp::IShl,
             OpCode::LShl => FatOp::LShl,
             OpCode::LUShr => FatOp::LUShr,
@@ -571,7 +565,7 @@ pub(crate) fn expand_ops(ops: &[(OpCode, u16)], class: &ImportedJavaClass) -> Bo
             }
             OpCode::New(index) => {
                 let class_name = class.lookup_class(*index).unwrap();
-                FatOp::New(class_path_to_class_mangled(class_name.into()))
+                FatOp::New(class_path_to_class_mangled(class_name))
             }
             OpCode::ANewArray(index) => {
                 let class_name = class.lookup_class(*index).unwrap();
@@ -609,7 +603,7 @@ pub(crate) fn expand_ops(ops: &[(OpCode, u16)], class: &ImportedJavaClass) -> Bo
             OpCode::Dup2X2 => FatOp::Dup2X2,
             OpCode::Pop => FatOp::Pop,
             OpCode::Pop2 => FatOp::Pop2,
-            ///TODO: handle non-static methods(change argc by 1)
+            // TODO: handle non-static methods(change argc by 1)
             OpCode::InvokeSpecial(index) => {
                 let (method_class, method_name, args, ret) =
                     methodref_to_mangled_and_sig(*index, class);
@@ -684,11 +678,11 @@ pub(crate) fn expand_ops(ops: &[(OpCode, u16)], class: &ImportedJavaClass) -> Bo
             OpCode::MonitorEnter => FatOp::MonitorEnter,
             OpCode::MonitorExit => FatOp::MonitorExit,
             OpCode::LookupSwitch(switch) => {
-                let default_offset: u16 = (op.1 as i32 + switch.default_offset as i32) as u16;
+                let default_offset: u16 = (op.1 as i32 + switch.default_offset) as u16;
                 let default_op = find_op_with_offset(ops, default_offset).unwrap();
                 let mut pairs = Vec::with_capacity(switch.pairs.len());
                 for (key, offset) in switch.pairs.iter() {
-                    let offset: u16 = (op.1 as i32 + *offset as i32) as u16;
+                    let offset: u16 = (op.1 as i32 + *offset) as u16;
                     let op = find_op_with_offset(ops, offset).unwrap();
                     pairs.push((*key, op));
                 }

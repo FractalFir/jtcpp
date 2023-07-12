@@ -1,6 +1,4 @@
-use crate::{
-    method_desc_to_args, BasicBlock, FatOp, IString, ImportedJavaClass, MethodCG, VariableType,
-};
+use crate::{method_desc_to_args, FatOp, IString, ImportedJavaClass, VariableType};
 pub(crate) struct Method {
     is_virtual: bool,
     class_name: IString,
@@ -34,7 +32,7 @@ impl Method {
         jc: &ImportedJavaClass,
     ) -> Method {
         let name: IString = name.into();
-        let (args, ret_val) = method_desc_to_args(method.descriptor(&jc));
+        let (args, ret_val) = method_desc_to_args(method.descriptor(jc));
         let is_virtual = method.is_virtual(jc);
         let ops = match method.bytecode() {
             Some(ops) => crate::fatops::expand_ops(ops, jc),
@@ -48,61 +46,5 @@ impl Method {
             ret_val,
             ops,
         }
-    }
-    fn into_bbs(&self) -> Vec<(usize, BasicBlock)> {
-        let mut jump_targets = Vec::with_capacity(self.ops.len());
-        for op in self.ops.iter() {
-            match op.jump_target() {
-                Some(targets) => {
-                    targets.iter().for_each(|target| jump_targets.push(*target));
-                }
-                None => (),
-            }
-        }
-        //println!("jump_targets:{jump_targets:?}");
-        jump_targets.sort();
-        jump_targets.dedup();
-        let mut bbs = Vec::new();
-        let mut bb_beg = 0;
-        for (index, _op) in self.ops.iter().enumerate() {
-            //println!("{index}:{op:?}");
-            if jump_targets.contains(&index) {
-                bbs.push((bb_beg, BasicBlock::new(&self.ops[bb_beg..index], bb_beg)));
-                bb_beg = index;
-            }
-        }
-        if bb_beg < self.ops.len() {
-            bbs.push((bb_beg, BasicBlock::new(&self.ops[bb_beg..], bb_beg)));
-        }
-        bbs.into()
-    }
-    fn link_bbs(_bbs: &mut [(usize, BasicBlock)]) {
-        //TODO:Link em
-    }
-    pub(crate) fn codegen(&self) -> IString {
-        println!("Generating code for method {}", self.name);
-        let mut bbs = self.into_bbs();
-        Self::link_bbs(&mut bbs);
-        let mut cg = MethodCG::new(
-            &self.args,
-            &self.name,
-            &self.class_name,
-            self.ret_val.clone(),
-            self.is_virtual,
-        );
-        for arg in &self.args {
-            match arg.dependency() {
-                Some(dep) => cg.add_include(dep),
-                None => (),
-            }
-        }
-        match self.ret_val.dependency() {
-            Some(dep) => cg.add_include(dep),
-            None => (),
-        }
-        for basic_block in bbs {
-            basic_block.1.codegen(&mut cg);
-        }
-        cg.final_code()
     }
 }

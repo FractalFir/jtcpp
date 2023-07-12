@@ -15,7 +15,7 @@ impl IncludeBuilder {
         }
     }
     fn add_include(&mut self, include: &str) {
-        if let None = self.includes.get(include) {
+        if self.includes.get(include).is_none() {
             self.header
                 .push_str(&format!("#include \"{include}.hpp\"\n"));
             self.includes.insert(include.into());
@@ -33,15 +33,14 @@ fn push_method_sig(target: &mut String, method_name: &str, method: &crate::Metho
     ));
     let mut margs = method.args().iter();
     //println!("\n\t{name}::{method_name}->{margs:?}",name = self.name);
-    match margs.next() {
-        Some(arg) => target.push_str(&arg.c_type()),
-        None => (),
-    }
+    if let Some(arg) = margs.next() {
+        target.push_str(&arg.c_type())
+    };
     for marg in margs {
         target.push(',');
         target.push_str(&marg.c_type());
     }
-    target.push_str(")");
+    target.push(')');
 }
 pub(crate) fn create_header<W: Write>(out: &mut W, class: &Class) -> std::io::Result<()> {
     let mut includes = IncludeBuilder::new(class.name());

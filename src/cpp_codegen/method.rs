@@ -156,7 +156,7 @@ macro_rules! set_field_impl {
         )
     }};
     ($mw:ident,$field_name:ident) => {{
-        let (valtype, value) = $mw.vstack_pop().unwrap();
+        let (_valtype, value) = $mw.vstack_pop().unwrap();
         let field_owner = $mw.vstack_pop().unwrap();
         //assert_eq!(valtype,$vartype);
         let field_owner = field_owner.1;
@@ -224,8 +224,8 @@ macro_rules! convert_impl {
 }
 macro_rules! conditional_impl {
     ($mw:ident,$cmp:literal,$target:ident) => {{
-        let (btype, b) = $mw.vstack_pop().unwrap();
-        let (atype, a) = $mw.vstack_pop().unwrap();
+        let (_btype, b) = $mw.vstack_pop().unwrap();
+        let (_atype, a) = $mw.vstack_pop().unwrap();
         //TODO: Consider chaecking types!
         format!(
             concat!("if({a}", $cmp, "{b}) goto bb{target};"),
@@ -263,7 +263,7 @@ fn write_op(op: &FatOp, mw: &mut MethodWriter) {
             "".into()
         }
         FatOp::AGetField {
-            class_name,
+            class_name: _,
             field_name,
             type_name,
         } => get_field_impl!(
@@ -289,32 +289,41 @@ fn write_op(op: &FatOp, mw: &mut MethodWriter) {
             }
         ),
         FatOp::AAGetField {
-            class_name,
+            class_name: _,
             field_name,
             atype,
-        } => get_field_impl!(mw, field_name,VariableType::ArrayRef(Box::new(atype.clone()))), //TODO: fix vstack type issues, readd ``
+        } => get_field_impl!(
+            mw,
+            field_name,
+            VariableType::ArrayRef(Box::new(atype.clone()))
+        ), //TODO: fix vstack type issues, readd ``
         FatOp::FGetStatic(class_name, static_name) => {
             get_static_impl!(mw, class_name, static_name, VariableType::Float)
         }
-        FatOp::AAStore=>{
-            let (value_type, value) = mw.vstack_pop().unwrap();
+        FatOp::AAStore => {
+            let (_value_type, value) = mw.vstack_pop().unwrap();
             let (index_type, index) = mw.vstack_pop().unwrap();
             let (arr_ref_type, arr_ref) = mw.vstack_pop().unwrap();
             assert!(arr_ref_type.is_array());
-            assert_eq!(index_type,VariableType::Int);
+            assert_eq!(index_type, VariableType::Int);
             format!("{arr_ref}->Set({index},{value});")
         }
-        FatOp::AALoad=>{
+        FatOp::AALoad => {
             let (index_type, index) = mw.vstack_pop().unwrap();
             let (arr_ref_type, arr_ref) = mw.vstack_pop().unwrap();
             assert!(arr_ref_type.is_array());
-            assert_eq!(index_type,VariableType::Int);
+            assert_eq!(index_type, VariableType::Int);
             let im_name = mw.get_intermidiate();
-            mw.vstack_push(&im_name, VariableType::ObjectRef { name: "unknown".into() });
+            mw.vstack_push(
+                &im_name,
+                VariableType::ObjectRef {
+                    name: "unknown".into(),
+                },
+            );
             format!("auto {im_name} = {arr_ref}->Get({index});")
         }
-        FatOp::ArrayLength=>{
-            let (arr_ref_type, arr_ref) = mw.vstack_pop().unwrap();
+        FatOp::ArrayLength => {
+            let (_arr_ref_type, arr_ref) = mw.vstack_pop().unwrap();
             let im_name = mw.get_intermidiate();
             mw.vstack_push(&im_name, VariableType::Int);
             format!("int {im_name} = {arr_ref}->GetLength();")
@@ -323,7 +332,7 @@ fn write_op(op: &FatOp, mw: &mut MethodWriter) {
         FatOp::FStore(index) => store_impl!(mw, index, LocalKind::Float),
         FatOp::IStore(index) => store_impl!(mw, index, LocalKind::Int),
         FatOp::APutField {
-            class_name,
+            class_name: _,
             field_name,
             type_name,
         } => set_field_impl!(
@@ -334,9 +343,9 @@ fn write_op(op: &FatOp, mw: &mut MethodWriter) {
             }
         ),
         FatOp::AAPutField {
-            class_name,
+            class_name: _,
             field_name,
-            atype,
+            atype: _,
         } => set_field_impl!(mw, field_name), //TODO: fix vstack type issues, readd `VariableType::ArrayRef(Box::new(atype.clone()))`
         FatOp::FPutField(_class_name, field_name) => {
             set_field_impl!(mw, field_name, VariableType::Float)
@@ -400,8 +409,8 @@ fn write_op(op: &FatOp, mw: &mut MethodWriter) {
         }
         FatOp::ANewArray(name) => {
             let im = mw.get_intermidiate();
-            let (length_type,length) = mw.vstack_pop().unwrap();
-            assert_eq!(length_type,VariableType::Int);
+            let (length_type, length) = mw.vstack_pop().unwrap();
+            assert_eq!(length_type, VariableType::Int);
             mw.vstack_push(&im, VariableType::ObjectRef { name: name.clone() });
             format!("RuntimeArray<{name}*>* {im} = new RuntimeArray<{name}*>({length});")
         }
@@ -435,10 +444,9 @@ fn write_op(op: &FatOp, mw: &mut MethodWriter) {
                 ));
                 mw.vstack_push(&im_name, ret.clone());
             }
-            match args.next() {
-                Some(arg) => code.push_str(arg),
-                None => (),
-            }
+            if let Some(arg) = args.next() {
+                code.push_str(arg)
+            };
             for arg in args {
                 code.push(',');
                 code.push_str(arg);
@@ -466,10 +474,9 @@ fn write_op(op: &FatOp, mw: &mut MethodWriter) {
                 ));
                 mw.vstack_push(&im_name, ret.clone());
             }
-            match args.next() {
-                Some(arg) => code.push_str(arg),
-                None => (),
-            }
+            if let Some(arg) = args.next() {
+                code.push_str(arg)
+            };
             for arg in args {
                 code.push(',');
                 code.push_str(arg);
@@ -503,7 +510,7 @@ impl BasicBlock {
 //May be unneded?
 fn bb_unroll(basic_spans: &[(usize, &[FatOp])]) -> Box<[BasicBlock]> {
     // Iteretes all the spans, returning only those which have at least one jump, which goes forward.
-    let forward_spans = basic_spans.iter().filter(|(start, ops)| {
+    let _forward_spans = basic_spans.iter().filter(|(start, ops)| {
         ops.iter()
             .map(|op| op.jump_target())
             .any(|targets| targets.is_some_and(|targets| targets.iter().any(|pos| pos > start)))
@@ -566,7 +573,7 @@ fn push_method_sig_args(target: &mut String, method_name: &str, method: &crate::
         ));
         curr_id += 1;
     }
-    target.push_str(")");
+    target.push(')');
 }
 pub(crate) fn create_method_impl(
     mut out: impl Write,

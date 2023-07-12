@@ -1,3 +1,4 @@
+#![allow(dead_code)]
 use super::opcodes::{load_ops, OpCode};
 use super::{load_u16, load_u32, load_u8, AccessFlags, ConstantItem};
 #[derive(Debug)]
@@ -278,7 +279,7 @@ impl Attribute {
         };
         let attribute_length = load_u32(src)? as usize;
         let mut attibute_data = vec![0; attribute_length];
-        src.read(&mut attibute_data)?;
+        src.read_exact(&mut attibute_data)?;
         Self::decode_attribute(&mut &attibute_data[..], attribute_name, const_items)
     }
 }

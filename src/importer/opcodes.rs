@@ -39,11 +39,9 @@ pub(crate) enum OpCode {
     LRem,
     IShr,
     IShl,
-    LShr,
     LShl,
     IUShr,
     LUShr,
-    LUShl,
     IAnd,
     LAnd,
     IOr,
@@ -153,22 +151,6 @@ pub(crate) enum OpCode {
 pub(crate) struct LookupSwitch {
     pub(crate) default_offset: i32,
     pub(crate) pairs: Box<[(i32, i32)]>,
-}
-impl OpCode {
-    //Checks if op is a valid method terminator(return or throw, or GoTo that goes back).
-    fn is_term(&self) -> bool {
-        matches!(
-            self,
-            Self::Return
-                | Self::AReturn
-                | Self::IReturn
-                | Self::FReturn
-                | Self::LReturn
-                | Self::DReturn
-                | Self::Throw
-                | Self::GoTo(..=-1)
-        )
-    }
 }
 pub(crate) fn load_ops<R: std::io::Read>(
     src: &mut R,
@@ -437,7 +419,7 @@ pub(crate) fn load_ops<R: std::io::Read>(
             }
             0xab => {
                 let to_next = ((4 - curr_offset % 4) % 4) as usize;
-                /// skip to_next
+                // skip to_next
                 let mut out = [0; 4];
                 src.read_exact(&mut out[..to_next])?;
                 curr_offset += to_next as u16;
