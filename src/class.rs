@@ -1,5 +1,4 @@
-use crate::{
-    class_path_to_class_mangled, field_descriptor_to_ftype, IString, Method, VariableType,
+use crate::{field_descriptor_to_ftype, IString, Method, VariableType,
     ERR_SUPER_INVALID, ERR_THIS_INVALID,
 };
 pub(crate) struct Class {
@@ -10,12 +9,30 @@ pub(crate) struct Class {
     static_methods: Vec<(IString, Method)>,
     virtual_methods: Vec<(IString, Method)>,
 }
+pub fn java_class_to_cpp_class(path:&str)->IString{
+    path.replace("/","::").into()
+}
+pub fn cpp_class_to_path(class:&str)->IString{
+    class.replace("::","_cs_").into()
+}
+#[test]
+fn java_to_cpp_paths(){
+    assert_eq!(&*java_class_to_cpp_class("java/lang/Object"),"java::lang::Object");
+    assert_eq!(&*java_class_to_cpp_class("Vector3"),"Vector3");
+    assert_eq!(&*cpp_class_to_path(&*java_class_to_cpp_class("java/lang/Object")),"java_cs_lang_cs_Object");
+}
 impl Class {
-    pub(crate) fn name(&self) -> &str {
+    pub(crate) fn path(&self)->IString{
+        cpp_class_to_path(self.cpp_name())
+    }
+    pub(crate) fn cpp_name(&self) -> &str {
         &self.name
     }
-    pub(crate) fn parrent_name(&self) -> &str {
+    pub(crate) fn parrent_cpp_name(&self) -> &str {
         &self.parrent
+    }
+    pub(crate) fn parrent_path(&self) -> IString{
+        cpp_class_to_path(&self.parrent)
     }
     pub(crate) fn static_methods(&self) -> &[(IString, Method)] {
         &self.static_methods
@@ -39,7 +56,7 @@ impl Class {
                 std::process::exit(ERR_THIS_INVALID);
             }
         };
-        let class_name = class_path_to_class_mangled(name);
+        let class_name = java_class_to_cpp_class(name);
         let parrent = match java_class.lookup_class(java_class.super_class()) {
             Some(parrent) => parrent,
             None => {
@@ -49,7 +66,7 @@ impl Class {
                 std::process::exit(ERR_SUPER_INVALID);
             }
         };
-        let parrent = class_path_to_class_mangled(parrent);
+        let parrent = java_class_to_cpp_class(parrent);
         let mut fields: Vec<(IString, VariableType)> =
             Vec::with_capacity(java_class.fields().len());
         let mut static_fields: Vec<(IString, VariableType)> =

@@ -14,12 +14,13 @@ class StdOut: public OutuptStreamWrapper{
     virtual void close();
     virtual void flush();
 };
-class java_cs_io_cs_OutputStream:public java_cs_lang_cs_Object{
+namespace java{namespace io{class OutputStream;};};
+class java::io::OutputStream:public java::lang::Object{
     protected:
         OutuptStreamWrapper* out_stream;
-        java_cs_io_cs_OutputStream();
+        OutputStream();
     public:
-        java_cs_io_cs_OutputStream(OutuptStreamWrapper* out_stream);
+        OutputStream(OutuptStreamWrapper* out_stream);
         virtual void close_ne__ab__as_ae_V();
         virtual void flush_ne__ab__as_ae_V();
         virtual void write(RuntimeArray<uint8_t>* arr);

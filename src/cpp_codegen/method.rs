@@ -171,14 +171,14 @@ macro_rules! get_static_impl {
         let im_name = $mw.get_intermidiate();
         $mw.vstack_push(&im_name, $vartype);
         if let Some(dep) = ($vartype).dependency() {
-            $mw.add_include(dep);
+            $mw.add_include(&dep);
         }
-        $mw.add_include($field_owner);
+        $mw.add_include(&*$field_owner.class_path());
         format!(
             "{ctype} {im_name} = {field_owner}::{static_name};",
             static_name = $static_name,
             ctype = $vartype.c_type(),
-            field_owner = $field_owner
+            field_owner = $field_owner.cpp_class()
         )
     }};
 }
@@ -189,7 +189,7 @@ macro_rules! set_static_impl {
         format!(
             "{field_owner}::{static_name} = {value};",
             static_name = $static_name,
-            field_owner = $field_owner
+            field_owner = $field_owner.cpp_class()
         )
     }};
 }
@@ -235,15 +235,14 @@ macro_rules! conditional_impl {
         )
     }};
 }
+
 fn write_op(op: &FatOp, mw: &mut MethodWriter) {
     let code = match op {
         FatOp::ALoad(index) => load_impl!(
             mw,
             index,
             LocalKind::ObjectRef,
-            VariableType::ObjectRef {
-                name: "Unknown".into()
-            }
+            VariableType::ObjectRef(crate::fatops::ClassInfo::from_java_path("UNKNOWN"))
         ),
         FatOp::FLoad(index) => load_impl!(mw, index, LocalKind::Float, VariableType::Float),
         FatOp::ILoad(index) => load_impl!(mw, index, LocalKind::Int, VariableType::Int),
@@ -263,33 +262,29 @@ fn write_op(op: &FatOp, mw: &mut MethodWriter) {
             "".into()
         }
         FatOp::AGetField {
-            class_name: _,
+            class_info: _,
             field_name,
-            type_name,
+            type_info,
         } => get_field_impl!(
             mw,
             field_name,
-            VariableType::ObjectRef {
-                name: type_name.clone()
-            }
+            VariableType::ObjectRef(type_info.clone())
         ),
         FatOp::FGetField(_class_name, field_name) => {
             get_field_impl!(mw, field_name, VariableType::Float)
         }
         FatOp::AGetStatic {
-            class_name,
+            class_info,
             static_name,
-            type_name,
+            type_info,
         } => get_static_impl!(
             mw,
-            class_name,
+            class_info,
             static_name,
-            VariableType::ObjectRef {
-                name: type_name.clone()
-            }
+            VariableType::ObjectRef(type_info.clone())
         ),
         FatOp::AAGetField {
-            class_name: _,
+            class_info: _,
             field_name,
             atype,
         } => get_field_impl!(
@@ -316,9 +311,7 @@ fn write_op(op: &FatOp, mw: &mut MethodWriter) {
             let im_name = mw.get_intermidiate();
             mw.vstack_push(
                 &im_name,
-                VariableType::ObjectRef {
-                    name: "unknown".into(),
-                },
+                VariableType::ObjectRef (crate::fatops::ClassInfo::from_java_path("UNKNOWN")),
             );
             format!("auto {im_name} = {arr_ref}->Get({index});")
         }
@@ -332,18 +325,16 @@ fn write_op(op: &FatOp, mw: &mut MethodWriter) {
         FatOp::FStore(index) => store_impl!(mw, index, LocalKind::Float),
         FatOp::IStore(index) => store_impl!(mw, index, LocalKind::Int),
         FatOp::APutField {
-            class_name: _,
+            class_info: _,
             field_name,
-            type_name,
+            type_info,
         } => set_field_impl!(
             mw,
             field_name,
-            VariableType::ObjectRef {
-                name: type_name.clone()
-            }
+            VariableType::ObjectRef(type_info.clone())
         ),
         FatOp::AAPutField {
-            class_name: _,
+            class_info: ClassInfo,
             field_name,
             atype: _,
         } => set_field_impl!(mw, field_name), //TODO: fix vstack type issues, readd `VariableType::ArrayRef(Box::new(atype.clone()))`
@@ -351,16 +342,14 @@ fn write_op(op: &FatOp, mw: &mut MethodWriter) {
             set_field_impl!(mw, field_name, VariableType::Float)
         }
         FatOp::APutStatic {
-            class_name,
+            class_info,
             field_name,
-            type_name,
+            type_info,
         } => set_static_impl!(
             mw,
+            class_info,
             field_name,
-            class_name,
-            VariableType::ObjectRef {
-                name: type_name.clone()
-            }
+            VariableType::ObjectRef(type_info.clone())
         ),
         FatOp::FPutStatic(class_name, field_name) => {
             set_static_impl!(mw, class_name, field_name, VariableType::Float)
@@ -402,29 +391,28 @@ fn write_op(op: &FatOp, mw: &mut MethodWriter) {
             let _ = mw.vstack_pop().unwrap();
             "".into()
         }
-        FatOp::New(name) => {
+        FatOp::New(class_info) => {
             let im = mw.get_intermidiate();
-            mw.vstack_push(&im, VariableType::ObjectRef { name: name.clone() });
-            mw.add_include(name);
-            format!("{name}* {im} = new {name}();")
+            mw.vstack_push(&im, VariableType::ObjectRef(class_info.clone()));
+            mw.add_include(&*class_info.class_path());
+            format!("{name}* {im} = new {name}();",name = class_info.cpp_class())
         }
-        FatOp::ANewArray(name) => {
+        FatOp::ANewArray(class_info) => {
             let im = mw.get_intermidiate();
             let (length_type, length) = mw.vstack_pop().unwrap();
             assert_eq!(length_type, VariableType::Int);
-            mw.vstack_push(&im, VariableType::ObjectRef { name: name.clone() });
-            format!("RuntimeArray<{name}*>* {im} = new RuntimeArray<{name}*>({length});")
+            mw.vstack_push(&im, VariableType::ObjectRef(class_info.clone()));
+            mw.add_include(&*class_info.class_path());
+            format!("RuntimeArray<{name}*>* {im} = new RuntimeArray<{name}*>({length});",name = class_info.cpp_class())
         }
         FatOp::StringConst(const_string) => {
             let im_name = mw.get_intermidiate();
             mw.add_include("java_cs_lang_cs_String");
             mw.vstack_push(
                 &im_name,
-                VariableType::ObjectRef {
-                    name: "java_cs_lang_cs_String".into(),
-                },
+                VariableType::ObjectRef(crate::fatops::ClassInfo::from_java_path("java/lang/String")),
             );
-            format!("java_cs_lang_cs_String* {im_name} = new java_cs_lang_cs_String(u\"{const_string}\");")
+            format!("java::lang::String* {im_name} = new java::lang::String(u\"{const_string}\");")
         }
         FatOp::InvokeVirtual(_class_name, vmethod_name, args, ret) => {
             let mut code = String::new();
@@ -456,8 +444,8 @@ fn write_op(op: &FatOp, mw: &mut MethodWriter) {
             code.push_str(");");
             code
         }
-        FatOp::InvokeStatic(method_class_name, method_name, args, ret) => {
-            mw.add_include(method_class_name);
+        FatOp::InvokeStatic(method_class_info, method_name, args, ret) => {
+            mw.add_include(&method_class_info.class_path());
             let mut code = String::new();
             let argc = args.len();
             let mut args: Vec<IString> = Vec::with_capacity(argc);
@@ -467,12 +455,13 @@ fn write_op(op: &FatOp, mw: &mut MethodWriter) {
             args.reverse();
             let mut args = args.iter();
             if *ret == crate::VariableType::Void {
-                code.push_str(&format!("{method_class_name}::{method_name}("));
+                code.push_str(&format!("{method_class_name}::{method_name}(",method_class_name = method_class_info.cpp_class()));
             } else {
                 let im_name = mw.get_intermidiate();
                 code.push_str(&format!(
                     "{ret} {im_name} = {method_class_name}::{method_name}(",
-                    ret = ret.c_type()
+                    ret = ret.c_type(),
+                    method_class_name = method_class_info.cpp_class()
                 ));
                 mw.vstack_push(&im_name, ret.clone());
             }

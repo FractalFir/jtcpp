@@ -24,21 +24,21 @@ void OutuptStreamWrapper::write(uint8_t* buffer, size_t length){
         }
     }
 }
-void java_cs_io_cs_OutputStream::flush_ne__ab__as_ae_V(){
+void java::io::OutputStream::flush_ne__ab__as_ae_V(){
     this->out_stream->flush();
 }
-void java_cs_io_cs_OutputStream::close_ne__ab__as_ae_V(){
+void java::io::OutputStream::close_ne__ab__as_ae_V(){
     this->out_stream->close();
 }
-void java_cs_io_cs_OutputStream::write(RuntimeArray<uint8_t>* arr,int off, int len){
+void java::io::OutputStream::write(RuntimeArray<uint8_t>* arr,int off, int len){
     assert(off + len < arr->GetLength());
     uint8_t *buffer = arr->GetPtr(off);
     this->out_stream->write(buffer,len);
 }
-void java_cs_io_cs_OutputStream::write(RuntimeArray<uint8_t>* arr){
+void java::io::OutputStream::write(RuntimeArray<uint8_t>* arr){
     this->write(arr,0,arr->GetLength());
 }
-void java_cs_io_cs_OutputStream::write(int byte_int){
+void java::io::OutputStream::write(int byte_int){
     uint8_t byte = (uint8_t)byte_int;
     this->out_stream->write(&byte,1);
 }

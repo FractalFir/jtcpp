@@ -6,10 +6,12 @@
 #include <assert.h>
 //TEMPORARY!!
 struct gc{};
-struct java_cs_lang_cs_Object : gc{
+namespace java{namespace lang{class Object;};};
+class java::lang::Object : gc{
+public:
       virtual void _init__ne__ab_ae_V();
 };
-template <typename T> class RuntimeArray : java_cs_lang_cs_Object{
+template <typename T> class RuntimeArray : java::lang::Object{
       T* data;
       int length;
 public:

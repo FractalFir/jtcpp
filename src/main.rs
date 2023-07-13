@@ -12,6 +12,7 @@ use crate::importer::{BytecodeImportError, ImportedJavaClass};
 use clap::Parser;
 use std::io::Write;
 use std::path::PathBuf;
+use crate::fatops::ClassInfo;
 pub type IString = Box<str>;
 fn method_name_to_c_name(method_name: &str) -> IString {
     match method_name {
@@ -84,11 +85,11 @@ enum VariableType {
     Long,
     Float,
     Double,
-    ObjectRef { name: IString },
+    ObjectRef(ClassInfo),
     ArrayRef(Box<VariableType>),
 }
 impl VariableType {
-    pub(crate) fn dependency(&self) -> Option<&str> {
+    pub(crate) fn dependency(&self) -> Option<IString> {
         match self {
             Self::Void
             | Self::Char
@@ -99,7 +100,7 @@ impl VariableType {
             | Self::Long
             | Self::Float
             | Self::Double => None,
-            Self::ObjectRef { name } => Some(name),
+            Self::ObjectRef(class_info) => Some(class_info.class_path()),
             Self::ArrayRef(var) => var.dependency(),
         }
     }
@@ -119,7 +120,7 @@ impl VariableType {
             Self::Short => "short".into(),
             Self::Char => "short".into(),
             Self::Void => "void".into(),
-            Self::ObjectRef { name } => format!("{name}*").into(),
+            Self::ObjectRef(info) => format!("{}*",info.cpp_class()).into(),
             Self::ArrayRef(atype) => format!("RuntimeArray<{}>*", atype.c_type()).into(),
             //_=>todo!("Can't get ctype of {self:?}!"),
         }
@@ -133,12 +134,13 @@ impl VariableType {
             Self::Bool => "z".into(),
             Self::Byte => "b".into(),
             Self::Short => "s".into(),
-            Self::ObjectRef { name: _ } => "a".into(),
+            Self::ObjectRef(_) => "a".into(),
             Self::ArrayRef(_atype) => "aa".into(),
             _ => todo!("Can't get type postifx of {self:?}!"),
         }
     }
 }
+
 pub(crate) fn field_desc_str_to_ftype(desc_str: &str, th: usize) -> VariableType {
     let beg = desc_str.chars().nth(th).unwrap();
     match beg {
@@ -148,14 +150,13 @@ pub(crate) fn field_desc_str_to_ftype(desc_str: &str, th: usize) -> VariableType
         'F' => VariableType::Float,
         'I' => VariableType::Int,
         'J' => VariableType::Long,
-        'L' => VariableType::ObjectRef {
-            name: class_path_to_class_mangled(
+        'L' => VariableType::ObjectRef (ClassInfo::from_java_path(
                 desc_str[(th + 1)..(desc_str.len() - 1)]
                     .split(';')
                     .next()
                     .unwrap(),
             ),
-        },
+        ),
         '[' => VariableType::ArrayRef(Box::new(field_desc_str_to_ftype(desc_str, th + 1))),
         'S' => VariableType::Short,
         'Z' => VariableType::Bool,
@@ -332,7 +333,7 @@ impl CompilationContext {
         for (index, class) in classes.iter().enumerate() {
             print_progress(index, classes.len());
             let mut path = ca.out.clone();
-            path.push(class.name());
+            path.push(&*class.path());
             path.set_extension("hpp");
             let hout = std::fs::File::create(&path);
             let mut hout = match hout {
@@ -362,33 +363,33 @@ impl CompilationContext {
             print_progress(index, classes.len());
             for (sname, smethod) in class.static_methods() {
                 let mut path = ca.out.clone();
-                path.push(&format!("{}_{}", class.name(), sname));
+                path.push(&format!("{}_{}", class.path(), sname));
                 path.set_extension("cpp");
                 let mut cout = std::fs::File::create(path)?;
                 cpp_codegen::create_method_impl(&mut cout, smethod)?;
             }
             for (sname, smethod) in class.virtual_methods() {
                 let mut path = ca.out.clone();
-                path.push(&format!("{}_{}", class.name(), sname));
+                path.push(&format!("{}_{}", class.path(), sname));
                 path.set_extension("cpp");
                 let mut cout = std::fs::File::create(path)?;
                 cpp_codegen::create_method_impl(&mut cout, smethod)?;
             }
             let mut path = ca.out.clone();
-            path.push(class.name());
+            path.push(&*class.path());
             path.set_extension("cpp");
             let mut class_cpp_out = std::fs::File::create(path)?;
             write!(
                 class_cpp_out,
                 "#include \"{class_path}.hpp\"\n",
-                class_path = class.name()
+                class_path = class.path()
             )?;
             for (static_name, static_type) in class.static_fields() {
                 write!(
                     class_cpp_out,
                     "{ctype} {class_path}::{static_name};",
                     ctype = static_type.c_type(),
-                    class_path = class.name()
+                    class_path = class.path()
                 )?;
             }
         }

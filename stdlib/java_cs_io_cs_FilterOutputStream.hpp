@@ -1,8 +1,9 @@
 #pragma once
 #include "java_cs_io_cs_OutputStream.hpp"
-class java_cs_io_cs_FilterOutputStream:public java_cs_io_cs_OutputStream{
+namespace java{namespace io{class FilterOutputStream;};};
+class java::io::FilterOutputStream:public java::io::OutputStream{
     protected:
-        java_cs_io_cs_FilterOutputStream();
+        FilterOutputStream();
     public:
-        java_cs_io_cs_FilterOutputStream(std::ofstream out_stream);
+        FilterOutputStream(std::ofstream out_stream);
 };
