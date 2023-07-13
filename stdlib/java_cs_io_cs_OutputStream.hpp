@@ -1,13 +1,27 @@
 #pragma once
 #include "java_cs_lang_cs_Object.hpp"
-#include <ostream>
-class java_cs_io_cs_OutputStream:java_cs_lang_cs_Object{
+#define BUFFER_CAP 1024
+class OutuptStreamWrapper{
+protected:
+    size_t buff_offset;
+    uint8_t buffer[BUFFER_CAP];  
+public:
+    virtual void close() = 0;
+    virtual void flush() = 0;
+    virtual void write(uint8_t* buffer,size_t byte_count);
+};
+class StdOut: public OutuptStreamWrapper{
+    virtual void close();
+    virtual void flush();
+};
+class java_cs_io_cs_OutputStream:public java_cs_lang_cs_Object{
     protected:
-        std::ostream out_stream;
+        OutuptStreamWrapper* out_stream;
+        java_cs_io_cs_OutputStream();
     public:
-        java_cs_io_cs_OutputStream(std::ostream out_stream);
-        virtual void close();
-        virtual void flush();
+        java_cs_io_cs_OutputStream(OutuptStreamWrapper* out_stream);
+        virtual void close_ne__ab__as_ae_V();
+        virtual void flush_ne__ab__as_ae_V();
         virtual void write(RuntimeArray<uint8_t>* arr);
         virtual void write(RuntimeArray<uint8_t>* arr,int off, int len);
         virtual void write(int byte);

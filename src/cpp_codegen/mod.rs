@@ -25,7 +25,6 @@ impl IncludeBuilder {
         &self.header
     }
 }
-
 fn push_method_sig(target: &mut String, method_name: &str, method: &crate::Method) {
     target.push_str(&format!(
         "{ret} {method_name}(",

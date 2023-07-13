@@ -3,6 +3,7 @@
 #define java_cs_lang_cs_Object_H 
 #include <memory>
 #include <cmath>  
+#include <assert.h>
 //TEMPORARY!!
 struct gc{};
 struct java_cs_lang_cs_Object : gc{
@@ -19,8 +20,11 @@ public:
       T Get(int index){
             return this->data[index];
       }
-      void Set(int index,T data){
+      void Set(int index,T value){
             this->data[index] = value;
+      }
+      T* GetPtr(int index){
+            return &(this->data[index]);
       }
       int GetLength(){
             return this->length;

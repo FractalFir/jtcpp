@@ -1,3 +1,4 @@
+#![allow(dead_code)]
 mod attribute;
 pub mod opcodes;
 use crate::importer::attribute::BootstrapMethod;

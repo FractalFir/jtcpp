@@ -1,4 +1,3 @@
-mod basic_block;
 mod class;
 mod cpp_codegen;
 mod fatops;
@@ -168,8 +167,7 @@ pub(crate) fn field_descriptor_to_ftype(
     descriptor: u16,
     class: &ImportedJavaClass,
 ) -> VariableType {
-    let descriptor = class.lookup_utf8(descriptor).unwrap();
-    field_desc_str_to_ftype(descriptor, 0)
+    field_desc_str_to_ftype(class.lookup_utf8(descriptor).unwrap(), 0)
 }
 #[test]
 fn arg_counter() {
@@ -213,7 +211,6 @@ fn method_desc_to_argc(desc: &str) -> u8 {
     //println!("span:{span},res{res}");
     res as u8
 }
-
 fn method_desc_to_args(desc: &str) -> (Vec<VariableType>, VariableType) {
     let arg_beg = desc.chars().position(|c| c == '(').unwrap() + 1;
     let arg_end = desc.chars().position(|c| c == ')').unwrap();
@@ -377,6 +374,23 @@ impl CompilationContext {
                 let mut cout = std::fs::File::create(path)?;
                 cpp_codegen::create_method_impl(&mut cout, smethod)?;
             }
+            let mut path = ca.out.clone();
+            path.push(class.name());
+            path.set_extension("cpp");
+            let mut class_cpp_out = std::fs::File::create(path)?;
+            write!(
+                class_cpp_out,
+                "#include \"{class_path}.hpp\"\n",
+                class_path = class.name()
+            )?;
+            for (static_name, static_type) in class.static_fields() {
+                write!(
+                    class_cpp_out,
+                    "{ctype} {class_path}::{static_name};",
+                    ctype = static_type.c_type(),
+                    class_path = class.name()
+                )?;
+            }
         }
         println!(
             "\r Finished stage 4(Generating Source files) of JVM bytecode to C++ translation."
@@ -386,6 +400,5 @@ impl CompilationContext {
 }
 fn main() {
     let args = ConvertionArgs::parse();
-    println!("args:{args:?}");
     CompilationContext::new(&args).unwrap();
 }
