@@ -66,11 +66,7 @@ impl Method {
         class.lookup_utf8(self.descriptor_index).unwrap()
     }
     pub(crate) fn is_virtual(&self, class: &ImportedJavaClass) -> bool {
-        if self.access_flags.is_static() {
-            self.name(class).contains("init")
-        } else {
-            true
-        }
+        !(self.access_flags.is_static() || self.name(class).contains("init"))
     }
     /*
     pub(crate) fn access_flags(&self) -> &AccessFlags {

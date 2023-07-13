@@ -98,7 +98,7 @@ pub(crate) enum FatOp {
     FNeg,
     LUShr,
     IUShr,
-    InvokeSpecial(ClassInfo, IString, u8),
+    InvokeSpecial(ClassInfo, IString, Box<[VariableType]>, VariableType),
     InvokeStatic(ClassInfo, IString, Box<[VariableType]>, VariableType),
     InvokeInterface, //Unfinshed
     InvokeDynamic,   //Temporarly ignored(Hard to parse)
@@ -608,9 +608,9 @@ pub(crate) fn expand_ops(ops: &[(OpCode, u16)], class: &ImportedJavaClass) -> Bo
                     .replace("<cinit>", "_cinit_")
                     .into();
                 if method_name.contains("_init_") {
-                    FatOp::InvokeVirtual(class_info, method_name, args.into(), ret)
+                    FatOp::InvokeSpecial(class_info, method_name, args.into(), ret)
                 } else {
-                    FatOp::InvokeSpecial(class_info, method_name, args.len() as u8)
+                    FatOp::InvokeSpecial(class_info, method_name, args.into(), ret)
                 }
             }
             OpCode::InvokeStatic(index) => {

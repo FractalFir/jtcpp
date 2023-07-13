@@ -235,7 +235,6 @@ macro_rules! conditional_impl {
         )
     }};
 }
-
 fn write_op(op: &FatOp, mw: &mut MethodWriter) {
     let code = match op {
         FatOp::ALoad(index) => load_impl!(
@@ -247,17 +246,18 @@ fn write_op(op: &FatOp, mw: &mut MethodWriter) {
         FatOp::FLoad(index) => load_impl!(mw, index, LocalKind::Float, VariableType::Float),
         FatOp::ILoad(index) => load_impl!(mw, index, LocalKind::Int, VariableType::Int),
         FatOp::FConst(value) => {
-            //let constant = &format("{value}");
             mw.vstack_push(&format!("{value:.16}f"), VariableType::Float);
             "".into()
         }
+        FatOp::BConst(value)=>{
+            mw.vstack_push(&format!("{value:}"), VariableType::Int);
+            "".into()
+        }
         FatOp::IConst(value) => {
-            //let constant = &format("{value}");
             mw.vstack_push(&format!("{value:}"), VariableType::Int);
             "".into()
         }
         FatOp::SConst(value) => {
-            //let constant = &format("{value}");
             mw.vstack_push(&format!("{value:}"), VariableType::Int);
             "".into()
         }
@@ -437,6 +437,38 @@ fn write_op(op: &FatOp, mw: &mut MethodWriter) {
             if let Some(arg) = args.next() {
                 code.push_str(arg)
             };
+            for arg in args {
+                code.push(',');
+                code.push_str(arg);
+            }
+            code.push_str(");");
+            code
+        }
+        FatOp::InvokeSpecial(method_class_info, method_name, args, ret)=>{
+            mw.add_include(&method_class_info.class_path());
+            let mut code = String::new();
+            let argc = if method_name.contains("_init_") {args.len() + 1} else {args.len()};
+            let mut args: Vec<IString> = Vec::with_capacity(argc);
+            for _ in 0..argc {
+                args.push(mw.vstack_pop().unwrap().1);
+            }
+            args.reverse();
+            let mut args = args.iter();
+            let objref = args.next().unwrap();
+            if *ret == crate::VariableType::Void {
+                code.push_str(&format!(
+                    "{method_class_name}::{method_name}({objref}",
+                    method_class_name = method_class_info.cpp_class()
+                ));
+            } else {
+                let im_name = mw.get_intermidiate();
+                code.push_str(&format!(
+                    "{ret} {im_name} = {method_class_name}::{method_name}({objref}",
+                    ret = ret.c_type(),
+                    method_class_name = method_class_info.cpp_class()
+                ));
+                mw.vstack_push(&im_name, ret.clone());
+            }
             for arg in args {
                 code.push(',');
                 code.push_str(arg);

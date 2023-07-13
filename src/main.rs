@@ -186,7 +186,6 @@ fn method_desc_to_args(desc: &str) -> (Vec<VariableType>, VariableType) {
             within_class = false;
         }
     }
-    println!("desc:{desc:?} args:{args:?}");
     (args, ret_val)
 }
 #[derive(Debug, Parser)]

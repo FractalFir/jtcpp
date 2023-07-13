@@ -1,4 +1,4 @@
-use crate::{method_desc_to_args, FatOp, IString, ImportedJavaClass, VariableType};
+use crate::{method_desc_to_args, FatOp, IString, ImportedJavaClass, VariableType,fatops::ClassInfo};
 pub(crate) struct Method {
     is_virtual: bool,
     class_name: IString,
@@ -32,12 +32,15 @@ impl Method {
         jc: &ImportedJavaClass,
     ) -> Method {
         let name: IString = name.into();
-        let (args, ret_val) = method_desc_to_args(method.descriptor(jc));
+        let (mut args, ret_val) = method_desc_to_args(method.descriptor(jc));
         let is_virtual = method.is_virtual(jc);
         let ops = match method.bytecode() {
             Some(ops) => crate::fatops::expand_ops(ops, jc),
             None => [].into(),
         };
+        if name.contains("_init_"){
+            args.insert(0,VariableType::ObjectRef(ClassInfo::from_java_path(jc.name())))
+        }
         Method {
             class_name: jc.lookup_class(jc.this_class()).unwrap().into(),
             is_virtual,

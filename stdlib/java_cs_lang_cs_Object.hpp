@@ -7,7 +7,7 @@ struct gc{};
 namespace java{namespace lang{class Object;};};
 class java::lang::Object : gc{
 public:
-      virtual void _init___V();
+      static void _init___V(java::lang::Object* obj);
 };
 template <typename T> class RuntimeArray : java::lang::Object{
       T* data;

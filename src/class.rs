@@ -92,11 +92,12 @@ impl Class {
         let mut virtual_methods: Vec<(IString, Method)> =
             Vec::with_capacity(java_class.methods().len());
         for method in java_class.methods() {
-            if method.is_virtual(java_class) || method.name(java_class).contains("<init>") {
+            if method.is_virtual(java_class) {
                 let mangled_name = crate::mangle_method_name(
                     method.name(java_class),
                     method.descriptor(java_class),
                 );
+                println!("{mangled_name} is virtual!");
                 let method = Method::from_raw_method(method, &mangled_name, java_class);
                 virtual_methods.push((mangled_name.into(), method));
             } else {
