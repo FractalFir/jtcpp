@@ -265,11 +265,7 @@ fn write_op(op: &FatOp, mw: &mut MethodWriter) {
             class_info: _,
             field_name,
             type_info,
-        } => get_field_impl!(
-            mw,
-            field_name,
-            VariableType::ObjectRef(type_info.clone())
-        ),
+        } => get_field_impl!(mw, field_name, VariableType::ObjectRef(type_info.clone())),
         FatOp::FGetField(_class_name, field_name) => {
             get_field_impl!(mw, field_name, VariableType::Float)
         }
@@ -311,7 +307,7 @@ fn write_op(op: &FatOp, mw: &mut MethodWriter) {
             let im_name = mw.get_intermidiate();
             mw.vstack_push(
                 &im_name,
-                VariableType::ObjectRef (crate::fatops::ClassInfo::from_java_path("UNKNOWN")),
+                VariableType::ObjectRef(crate::fatops::ClassInfo::from_java_path("UNKNOWN")),
             );
             format!("auto {im_name} = {arr_ref}->Get({index});")
         }
@@ -328,11 +324,7 @@ fn write_op(op: &FatOp, mw: &mut MethodWriter) {
             class_info: _,
             field_name,
             type_info,
-        } => set_field_impl!(
-            mw,
-            field_name,
-            VariableType::ObjectRef(type_info.clone())
-        ),
+        } => set_field_impl!(mw, field_name, VariableType::ObjectRef(type_info.clone())),
         FatOp::AAPutField {
             class_info: ClassInfo,
             field_name,
@@ -395,7 +387,10 @@ fn write_op(op: &FatOp, mw: &mut MethodWriter) {
             let im = mw.get_intermidiate();
             mw.vstack_push(&im, VariableType::ObjectRef(class_info.clone()));
             mw.add_include(&*class_info.class_path());
-            format!("{name}* {im} = new {name}();",name = class_info.cpp_class())
+            format!(
+                "{name}* {im} = new {name}();",
+                name = class_info.cpp_class()
+            )
         }
         FatOp::ANewArray(class_info) => {
             let im = mw.get_intermidiate();
@@ -403,14 +398,19 @@ fn write_op(op: &FatOp, mw: &mut MethodWriter) {
             assert_eq!(length_type, VariableType::Int);
             mw.vstack_push(&im, VariableType::ObjectRef(class_info.clone()));
             mw.add_include(&*class_info.class_path());
-            format!("RuntimeArray<{name}*>* {im} = new RuntimeArray<{name}*>({length});",name = class_info.cpp_class())
+            format!(
+                "RuntimeArray<{name}*>* {im} = new RuntimeArray<{name}*>({length});",
+                name = class_info.cpp_class()
+            )
         }
         FatOp::StringConst(const_string) => {
             let im_name = mw.get_intermidiate();
             mw.add_include("java_cs_lang_cs_String");
             mw.vstack_push(
                 &im_name,
-                VariableType::ObjectRef(crate::fatops::ClassInfo::from_java_path("java/lang/String")),
+                VariableType::ObjectRef(crate::fatops::ClassInfo::from_java_path(
+                    "java/lang/String",
+                )),
             );
             format!("java::lang::String* {im_name} = new java::lang::String(u\"{const_string}\");")
         }
@@ -455,7 +455,10 @@ fn write_op(op: &FatOp, mw: &mut MethodWriter) {
             args.reverse();
             let mut args = args.iter();
             if *ret == crate::VariableType::Void {
-                code.push_str(&format!("{method_class_name}::{method_name}(",method_class_name = method_class_info.cpp_class()));
+                code.push_str(&format!(
+                    "{method_class_name}::{method_name}(",
+                    method_class_name = method_class_info.cpp_class()
+                ));
             } else {
                 let im_name = mw.get_intermidiate();
                 code.push_str(&format!(

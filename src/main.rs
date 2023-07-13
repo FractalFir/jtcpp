@@ -7,12 +7,12 @@ use class::Class;
 use include_dir::{include_dir, Dir};
 use method::Method;
 static STDLIB_DIR: Dir<'_> = include_dir!("$CARGO_MANIFEST_DIR/stdlib");
+use crate::fatops::ClassInfo;
 use crate::fatops::FatOp;
 use crate::importer::{BytecodeImportError, ImportedJavaClass};
 use clap::Parser;
 use std::io::Write;
 use std::path::PathBuf;
-use crate::fatops::ClassInfo;
 pub type IString = Box<str>;
 fn method_name_to_c_name(method_name: &str) -> IString {
     match method_name {
@@ -34,6 +34,10 @@ fn class_path_to_class_mangled(class_path: &str) -> IString {
     let out = out.replace('$', "_dolsig_");
     out.into()
 }
+#[test]
+fn desc_mangling() {
+    assert_eq!(&*desc_to_mangled("(D)D"), "_D_D");
+}
 fn desc_to_mangled(desc: &str) -> IString {
     let mut classname_beg = 0;
     let mut within_class = false;
@@ -48,14 +52,14 @@ fn desc_to_mangled(desc: &str) -> IString {
             let class = &desc[classname_beg..index];
             let class = class_path_to_class_mangled(class);
             res.push_str(&class);
-            res.push_str("_as_");
+            res.push_str("_");
             continue;
         }
         if curr == '(' {
-            res.push_str("_ab_");
+            res.push_str("_");
             continue;
         } else if curr == ')' {
-            res.push_str("ae_");
+            res.push_str("_");
             continue;
         }
         if !within_class {
@@ -67,12 +71,7 @@ fn desc_to_mangled(desc: &str) -> IString {
 fn mangle_method_name(method: &str, desc: &str) -> IString {
     let desc = desc_to_mangled(desc);
     let method = method_name_to_c_name(method);
-    format!("{method}_ne_{desc}").into()
-}
-fn mangle_method_name_partial(method: &str, desc: &str) -> IString {
-    let desc = desc_to_mangled(desc);
-    let method = method_name_to_c_name(method);
-    format!("{method}_ne_{desc}").into()
+    format!("{method}{desc}").into()
 }
 #[derive(Debug, Clone, PartialEq)]
 enum VariableType {
@@ -120,7 +119,7 @@ impl VariableType {
             Self::Short => "short".into(),
             Self::Char => "short".into(),
             Self::Void => "void".into(),
-            Self::ObjectRef(info) => format!("{}*",info.cpp_class()).into(),
+            Self::ObjectRef(info) => format!("{}*", info.cpp_class()).into(),
             Self::ArrayRef(atype) => format!("RuntimeArray<{}>*", atype.c_type()).into(),
             //_=>todo!("Can't get ctype of {self:?}!"),
         }
@@ -150,13 +149,12 @@ pub(crate) fn field_desc_str_to_ftype(desc_str: &str, th: usize) -> VariableType
         'F' => VariableType::Float,
         'I' => VariableType::Int,
         'J' => VariableType::Long,
-        'L' => VariableType::ObjectRef (ClassInfo::from_java_path(
-                desc_str[(th + 1)..(desc_str.len() - 1)]
-                    .split(';')
-                    .next()
-                    .unwrap(),
-            ),
-        ),
+        'L' => VariableType::ObjectRef(ClassInfo::from_java_path(
+            desc_str[(th + 1)..(desc_str.len() - 1)]
+                .split(';')
+                .next()
+                .unwrap(),
+        )),
         '[' => VariableType::ArrayRef(Box::new(field_desc_str_to_ftype(desc_str, th + 1))),
         'S' => VariableType::Short,
         'Z' => VariableType::Bool,
@@ -169,48 +167,6 @@ pub(crate) fn field_descriptor_to_ftype(
     class: &ImportedJavaClass,
 ) -> VariableType {
     field_desc_str_to_ftype(class.lookup_utf8(descriptor).unwrap(), 0)
-}
-#[test]
-fn arg_counter() {
-    assert_eq!(method_desc_to_argc("()I"), 0);
-    assert_eq!(method_desc_to_argc("(I)I"), 1);
-    assert_eq!(method_desc_to_argc("(IL)I"), 2);
-    assert_eq!(method_desc_to_argc("(IJF)I"), 3);
-    assert_eq!(method_desc_to_argc("(IJF)"), 3);
-    assert_eq!(method_desc_to_argc("(Ljava/lang/Object;)V"), 1);
-    assert_eq!(method_desc_to_argc("([[[D)V"), 1);
-}
-fn method_desc_to_argc(desc: &str) -> u8 {
-    assert_eq!(desc.chars().next(), Some('('));
-    let mut char_beg = 0;
-    let mut char_end = 0;
-    for (index, character) in desc.chars().enumerate() {
-        if character == '(' {
-            assert_eq!(char_beg, 0);
-            char_beg = index;
-        } else if character == ')' {
-            assert_eq!(char_end, 0);
-            char_end = index;
-        }
-    }
-    let span = &desc[(char_beg + 1)..char_end];
-    let mut res = 0;
-    let mut ident = false;
-    for curr in span.chars() {
-        if ident {
-            if matches!(curr, ';') {
-                ident = false;
-            }
-            continue;
-        } else if curr == 'L' {
-            ident = true;
-        } else if curr == '[' {
-            continue;
-        }
-        res += 1;
-    }
-    //println!("span:{span},res{res}");
-    res as u8
 }
 fn method_desc_to_args(desc: &str) -> (Vec<VariableType>, VariableType) {
     let arg_beg = desc.chars().position(|c| c == '(').unwrap() + 1;
@@ -361,27 +317,21 @@ impl CompilationContext {
         println!("\r Finished stage 3(Generating headers) of JVM bytecode to C++ translation.");
         for (index, class) in classes.iter().enumerate() {
             print_progress(index, classes.len());
-            for (sname, smethod) in class.static_methods() {
-                let mut path = ca.out.clone();
-                path.push(&format!("{}_{}", class.path(), sname));
-                path.set_extension("cpp");
-                let mut cout = std::fs::File::create(path)?;
-                cpp_codegen::create_method_impl(&mut cout, smethod)?;
-            }
-            for (sname, smethod) in class.virtual_methods() {
-                let mut path = ca.out.clone();
-                path.push(&format!("{}_{}", class.path(), sname));
-                path.set_extension("cpp");
-                let mut cout = std::fs::File::create(path)?;
-                cpp_codegen::create_method_impl(&mut cout, smethod)?;
-            }
             let mut path = ca.out.clone();
-            path.push(&*class.path());
+            path.push(&format!("{}", class.path()));
             path.set_extension("cpp");
             let mut class_cpp_out = std::fs::File::create(path)?;
+            for (_, smethod) in class.static_methods() {
+                cpp_codegen::create_method_impl(&mut class_cpp_out, smethod)?;
+                writeln!(class_cpp_out)?;
+            }
+            for (_, smethod) in class.virtual_methods() {
+                cpp_codegen::create_method_impl(&mut class_cpp_out, smethod)?;
+                writeln!(class_cpp_out)?;
+            }
             write!(
                 class_cpp_out,
-                "#include \"{class_path}.hpp\"\n",
+                "\n#include \"{class_path}.hpp\"\n",
                 class_path = class.path()
             )?;
             for (static_name, static_type) in class.static_fields() {

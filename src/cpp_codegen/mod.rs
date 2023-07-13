@@ -7,23 +7,26 @@ pub(self) struct IncludeBuilder {
     header: String,
     includes: HashSet<IString>,
 }
-fn create_namespace_def(cpp_class_name:&str)->IString{
-    let mut iter:Vec<_> = cpp_class_name.split("::").collect();
+fn create_namespace_def(cpp_class_name: &str) -> IString {
+    let mut iter: Vec<_> = cpp_class_name.split("::").collect();
     iter.reverse();
     let mut iter = iter.iter();
     let mut res = String::new();
-    if let Some(class_name) = iter.next(){
+    if let Some(class_name) = iter.next() {
         res = format!("struct {class_name};");
     }
-    for namespace in iter{
+    for namespace in iter {
         res = format!("namespace {namespace}{{{res}}};");
     }
     res.into()
 }
 #[test]
-fn class_name_to_namespace_def(){
-    assert_eq!(&*create_namespace_def("java::lang::Object"),"namespace java{namespace lang{struct Object;};};");
-    assert_eq!(&*create_namespace_def("Vector3"),"struct Vector3;");
+fn class_name_to_namespace_def() {
+    assert_eq!(
+        &*create_namespace_def("java::lang::Object"),
+        "namespace java{namespace lang{struct Object;};};"
+    );
+    assert_eq!(&*create_namespace_def("Vector3"), "struct Vector3;");
 }
 impl IncludeBuilder {
     fn new(this_file: &str) -> Self {
@@ -90,6 +93,7 @@ pub(crate) fn create_header<W: Write>(out: &mut W, class: &Class) -> std::io::Re
         if let Some(dep) = method.ret_val().dependency() {
             includes.add_include(&dep);
         }
+        println!("method_name:{method_name}")
     }
     let mut class_fields = String::new();
     for (field_name, field_type) in class.static_fields() {
@@ -111,7 +115,7 @@ pub(crate) fn create_header<W: Write>(out: &mut W, class: &Class) -> std::io::Re
         }
     }
     if class.cpp_name().contains("::") {
-        write!(out,"{}\n",create_namespace_def(class.cpp_name()))?;
+        write!(out, "{}\n", create_namespace_def(class.cpp_name()))?;
     }
     write!(
         out,

@@ -1,5 +1,5 @@
-use crate::{field_descriptor_to_ftype, IString, Method, VariableType,
-    ERR_SUPER_INVALID, ERR_THIS_INVALID,
+use crate::{
+    field_descriptor_to_ftype, IString, Method, VariableType, ERR_SUPER_INVALID, ERR_THIS_INVALID,
 };
 pub(crate) struct Class {
     name: IString,
@@ -9,20 +9,26 @@ pub(crate) struct Class {
     static_methods: Vec<(IString, Method)>,
     virtual_methods: Vec<(IString, Method)>,
 }
-pub fn java_class_to_cpp_class(path:&str)->IString{
-    path.replace("/","::").into()
+pub fn java_class_to_cpp_class(path: &str) -> IString {
+    path.replace("/", "::").into()
 }
-pub fn cpp_class_to_path(class:&str)->IString{
-    class.replace("::","_cs_").into()
+pub fn cpp_class_to_path(class: &str) -> IString {
+    class.replace("::", "_cs_").into()
 }
 #[test]
-fn java_to_cpp_paths(){
-    assert_eq!(&*java_class_to_cpp_class("java/lang/Object"),"java::lang::Object");
-    assert_eq!(&*java_class_to_cpp_class("Vector3"),"Vector3");
-    assert_eq!(&*cpp_class_to_path(&*java_class_to_cpp_class("java/lang/Object")),"java_cs_lang_cs_Object");
+fn java_to_cpp_paths() {
+    assert_eq!(
+        &*java_class_to_cpp_class("java/lang/Object"),
+        "java::lang::Object"
+    );
+    assert_eq!(&*java_class_to_cpp_class("Vector3"), "Vector3");
+    assert_eq!(
+        &*cpp_class_to_path(&*java_class_to_cpp_class("java/lang/Object")),
+        "java_cs_lang_cs_Object"
+    );
 }
 impl Class {
-    pub(crate) fn path(&self)->IString{
+    pub(crate) fn path(&self) -> IString {
         cpp_class_to_path(self.cpp_name())
     }
     pub(crate) fn cpp_name(&self) -> &str {
@@ -31,7 +37,7 @@ impl Class {
     pub(crate) fn parrent_cpp_name(&self) -> &str {
         &self.parrent
     }
-    pub(crate) fn parrent_path(&self) -> IString{
+    pub(crate) fn parrent_path(&self) -> IString {
         cpp_class_to_path(&self.parrent)
     }
     pub(crate) fn static_methods(&self) -> &[(IString, Method)] {
@@ -87,13 +93,19 @@ impl Class {
             Vec::with_capacity(java_class.methods().len());
         for method in java_class.methods() {
             if method.is_virtual(java_class) || method.name(java_class).contains("<init>") {
-                let mangled_name = method.virtual_name(java_class);
+                let mangled_name = crate::mangle_method_name(
+                    method.name(java_class),
+                    method.descriptor(java_class),
+                );
                 let method = Method::from_raw_method(method, &mangled_name, java_class);
-                virtual_methods.push((mangled_name, method));
+                virtual_methods.push((mangled_name.into(), method));
             } else {
-                let mangled_name = method.mangled_name(java_class);
+                let mangled_name = crate::mangle_method_name(
+                    method.name(java_class),
+                    method.descriptor(java_class),
+                );
                 let method = Method::from_raw_method(method, &mangled_name, java_class);
-                static_methods.push((mangled_name, method));
+                static_methods.push((mangled_name.into(), method));
             }
         }
         Class {

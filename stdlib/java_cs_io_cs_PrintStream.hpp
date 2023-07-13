@@ -5,7 +5,7 @@ namespace java{namespace io{class PrintStream;};};
 class java::io::PrintStream:public java::io::FilterOutputStream{
     public:
         PrintStream(OutuptStreamWrapper* out_stream);
-        virtual void println_ne__ab_java_cs_lang_cs_String_as_ae_V(java::lang::String* string);
-        virtual void print_ne__ab_java_cs_lang_cs_String_as_ae_V(java::lang::String* string);
-        virtual void print_ne__ab_Fae_V(float out_float);
+        virtual void println_java_cs_lang_cs_String__V(java::lang::String* string);
+        virtual void print_java_cs_lang_cs_String__V(java::lang::String* string);
+        virtual void print_F_V(float out_float);
 };

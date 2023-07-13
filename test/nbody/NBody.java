@@ -1,6 +1,6 @@
 import java.lang.Math; 
 class Rand{
-    static float state = 0.32324203f;
+    static float state;
     static float Rand(){
         state = ((state*state + .122423255f)*27.200424f - 1.234343f);
         state = state%1.0f;
@@ -128,7 +128,7 @@ class NBody{
     return new NBody(pc);
   }
   public static void main(String[] args){
-    NBody n = new NBody(3);
+    NBody n = new NBody(30);
     for(int i = 0; i < 1000; i++){
       n.Tick();
       n.Display();

@@ -1,6 +1,4 @@
 #pragma once
-#ifndef java_cs_lang_cs_Object_H
-#define java_cs_lang_cs_Object_H 
 #include <memory>
 #include <cmath>  
 #include <assert.h>
@@ -9,7 +7,7 @@ struct gc{};
 namespace java{namespace lang{class Object;};};
 class java::lang::Object : gc{
 public:
-      virtual void _init__ne__ab_ae_V();
+      virtual void _init___V();
 };
 template <typename T> class RuntimeArray : java::lang::Object{
       T* data;
@@ -32,4 +30,3 @@ public:
             return this->length;
       }
 };
-#endif

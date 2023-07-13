@@ -42,3 +42,4 @@ void java::io::OutputStream::write(int byte_int){
     uint8_t byte = (uint8_t)byte_int;
     this->out_stream->write(&byte,1);
 }
+java::io::OutputStream::OutputStream(){}

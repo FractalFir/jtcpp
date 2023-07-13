@@ -59,12 +59,6 @@ pub(crate) struct Method {
     attributes: Box<[Attribute]>,
 }
 impl Method {
-    pub(crate) fn mangled_name(&self, class: &ImportedJavaClass) -> IString {
-        crate::mangle_method_name_partial(self.name(class), self.descriptor(class))
-    }
-    pub(crate) fn virtual_name(&self, class: &ImportedJavaClass) -> IString {
-        crate::mangle_method_name_partial(self.name(class), self.descriptor(class))
-    }
     pub(crate) fn name<'a>(&'a self, class: &'a ImportedJavaClass) -> &str {
         class.lookup_utf8(self.name_index).unwrap()
     }

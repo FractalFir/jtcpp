@@ -1,8 +1,7 @@
-use super::{field_descriptor_to_ftype, method_desc_to_args, VariableType,
-};
+use super::{field_descriptor_to_ftype, method_desc_to_args, VariableType};
 use crate::importer::{opcodes::OpCode, ImportedJavaClass};
+use crate::mangle_method_name;
 use crate::IString;
-use crate::{mangle_method_name, mangle_method_name_partial, method_desc_to_argc};
 use smallvec::*;
 fn fieldref_to_info(index: u16, class: &ImportedJavaClass) -> (VariableType, IString, IString) {
     let (field_class, nametype) = class.lookup_filed_ref(index).unwrap();
@@ -12,18 +11,7 @@ fn fieldref_to_info(index: u16, class: &ImportedJavaClass) -> (VariableType, ISt
     let name = class.lookup_utf8(name).unwrap();
     (ftype, field_class.into(), name.into())
 }
-fn methodref_to_mangled_and_argc(index: u16, class: &ImportedJavaClass) -> (IString, u8) {
-    let (method_class, nametype) = class.lookup_method_ref(index).unwrap();
-    let (name, descriptor) = class.lookup_nametype(nametype).unwrap();
-    let _method_class = class.lookup_class(method_class).unwrap();
-    let name = class.lookup_utf8(name).unwrap();
-    let descriptor = class.lookup_utf8(descriptor).unwrap();
-    let mangled = mangle_method_name(name, descriptor);
-    //let method_id = self.code_container.lookup_or_insert_method(&mangled);
-    let argc = method_desc_to_argc(descriptor);
-    (mangled, argc)
-}
-fn methodref_to_mangled_and_sig(
+fn methodref_to_name_and_sig(
     index: u16,
     class: &ImportedJavaClass,
 ) -> (IString, IString, Vec<VariableType>, VariableType) {
@@ -37,34 +25,20 @@ fn methodref_to_mangled_and_sig(
     let (args, ret) = method_desc_to_args(descriptor);
     (method_class.into(), mangled, args, ret)
 }
-fn methodref_to_partial_mangled_and_argc(
-    index: u16,
-    class: &ImportedJavaClass,
-) -> (IString, IString, u8) {
-    let (method_class, nametype) = class.lookup_method_ref(index).unwrap();
-    let (name, descriptor) = class.lookup_nametype(nametype).unwrap();
-    let method_class = class.lookup_class(method_class).unwrap();
-    let name = class.lookup_utf8(name).unwrap();
-    let descriptor = class.lookup_utf8(descriptor).unwrap();
-    let mangled = mangle_method_name_partial(name, descriptor);
-    //let method_id = self.code_container.lookup_or_insert_method(&mangled);
-    let argc = method_desc_to_argc(descriptor);
-    (method_class.into(), mangled, argc)
+#[derive(Debug, Clone, PartialEq)]
+pub struct ClassInfo {
+    cpp_class: IString,
 }
-#[derive(Debug, Clone,PartialEq)]
-pub struct ClassInfo{
-    cpp_class:IString,
-}
-impl ClassInfo{
-    pub fn from_java_path(java_path:&str)->Self{
+impl ClassInfo {
+    pub fn from_java_path(java_path: &str) -> Self {
         let cpp_class = crate::class::java_class_to_cpp_class(java_path);
         assert!(!cpp_class.contains('_'));
-        Self{cpp_class}
+        Self { cpp_class }
     }
-    pub fn cpp_class(&self)->&str{
+    pub fn cpp_class(&self) -> &str {
         &self.cpp_class
     }
-    pub fn class_path(&self)->IString{
+    pub fn class_path(&self) -> IString {
         crate::class::cpp_class_to_path(&self.cpp_class)
     }
 }
@@ -126,8 +100,8 @@ pub(crate) enum FatOp {
     IUShr,
     InvokeSpecial(ClassInfo, IString, u8),
     InvokeStatic(ClassInfo, IString, Box<[VariableType]>, VariableType),
-    InvokeInterface(IString, u8),
-    InvokeDynamic, //Temporarly ignored(Hard to parse)
+    InvokeInterface, //Unfinshed
+    InvokeDynamic,   //Temporarly ignored(Hard to parse)
     InvokeVirtual(ClassInfo, IString, Box<[VariableType]>, VariableType),
     ZGetStatic(ClassInfo, IString),
     BGetStatic(ClassInfo, IString),
@@ -454,7 +428,7 @@ pub(crate) fn expand_ops(ops: &[(OpCode, u16)], class: &ImportedJavaClass) -> Bo
                     VariableType::Long => FatOp::LPutStatic(class_info, field_name),
                     VariableType::Float => FatOp::FPutStatic(class_info, field_name),
                     VariableType::Double => FatOp::DPutStatic(class_info, field_name),
-                    VariableType::ObjectRef (type_class_info) => FatOp::APutStatic {
+                    VariableType::ObjectRef(type_class_info) => FatOp::APutStatic {
                         class_info,
                         field_name,
                         type_info: type_class_info,
@@ -475,7 +449,7 @@ pub(crate) fn expand_ops(ops: &[(OpCode, u16)], class: &ImportedJavaClass) -> Bo
                     VariableType::Long => FatOp::LGetField(class_info, field_name),
                     VariableType::Float => FatOp::FGetField(class_info, field_name),
                     VariableType::Double => FatOp::DGetField(class_info, field_name),
-                    VariableType::ObjectRef(type_class_info)=> FatOp::AGetField {
+                    VariableType::ObjectRef(type_class_info) => FatOp::AGetField {
                         class_info,
                         field_name,
                         type_info: type_class_info,
@@ -568,7 +542,7 @@ pub(crate) fn expand_ops(ops: &[(OpCode, u16)], class: &ImportedJavaClass) -> Bo
                     VariableType::Long => FatOp::LPutField(class_info, field_name),
                     VariableType::Float => FatOp::FPutField(class_info, field_name),
                     VariableType::Double => FatOp::DPutField(class_info, field_name),
-                    VariableType::ObjectRef (type_class_info,) => FatOp::APutField {
+                    VariableType::ObjectRef(type_class_info) => FatOp::APutField {
                         class_info,
                         field_name,
                         type_info: type_class_info,
@@ -627,8 +601,12 @@ pub(crate) fn expand_ops(ops: &[(OpCode, u16)], class: &ImportedJavaClass) -> Bo
             // TODO: handle non-static methods(change argc by 1)
             OpCode::InvokeSpecial(index) => {
                 let (method_class, method_name, args, ret) =
-                    methodref_to_mangled_and_sig(*index, class);
+                    methodref_to_name_and_sig(*index, class);
                 let class_info = ClassInfo::from_java_path(&method_class);
+                let method_name: IString = method_name
+                    .replace("<init>", "_init_")
+                    .replace("<cinit>", "_cinit_")
+                    .into();
                 if method_name.contains("_init_") {
                     FatOp::InvokeVirtual(class_info, method_name, args.into(), ret)
                 } else {
@@ -636,21 +614,18 @@ pub(crate) fn expand_ops(ops: &[(OpCode, u16)], class: &ImportedJavaClass) -> Bo
                 }
             }
             OpCode::InvokeStatic(index) => {
-                let (method_class_name, name, args, ret) =
-                    methodref_to_mangled_and_sig(*index, class);
+                let (method_class_name, name, args, ret) = methodref_to_name_and_sig(*index, class);
                 let class_info = ClassInfo::from_java_path(&method_class_name);
                 FatOp::InvokeStatic(class_info, name, args.into(), ret)
             }
             OpCode::InvokeVirtual(index) => {
-                let (_, _, args, ret) = methodref_to_mangled_and_sig(*index, class);
-                let (class, name, _argc) = methodref_to_partial_mangled_and_argc(*index, class);
+                let (class, name, args, ret) = methodref_to_name_and_sig(*index, class);
                 let class_info = ClassInfo::from_java_path(&class);
                 FatOp::InvokeVirtual(class_info, name, args.into(), ret)
             }
             OpCode::InvokeInterface(index) => {
-                let (name, argc) = methodref_to_mangled_and_argc(*index, class);
                 //TODO:Potentially handle static interface methods.
-                FatOp::InvokeInterface(name, argc + 1)
+                FatOp::InvokeInterface
             }
             OpCode::InvokeDynamic(index) => {
                 let (bootstrap_method_attr_index, _name_and_type_index) =
