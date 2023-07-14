@@ -1,45 +1,17 @@
-# jtcpp - JVM bytecode to C++ converter
-`jtcpp` is a tool that takes java class and jar files, and converts them to valid C++ code. Resulting `.cpp` and `.hpp` files can then be compiled for a wide range of targets. **NOTE:** Not all targets provided by supported compilers(`gcc` and `clang`) can be used, because they must be also supported by the garbage collector. Other compilers and targets can be used, but it requires far more effort to get java code up and running.
-# What does it mean that a target is not supported?
-`jtcpp` generated code does not use any compiler - specific intrinsic or extensions. Compilers such as `msvc` are not supported because they require different flags for compilation, and those flags are not provided. 
-A target platform is not supported if the used garbage collector does not support it. In such case either porting of the used GC, or replacing it is required. All `jtcpp` classes derive form class `gc`, and this class should be replaced to add alternative, platform-specific `gc`'s.
-//TODO: more on usage, examples, effects on performance
-# Why translation can fail?
-`jtcpp` assumes certain invariants hold true for all JVM bytecode. If those invaraints are broken, translation will continue, but produced code can contain errors. Breaking of those invariants is *very, very* rare, and code that breaks them would, in many cases, have to be maliciously designed to do so.
-## Examples of invariants
-### Example bytecode notation
-Beware: in all examples, a special notation is used to aid reading and understanding them. All jumps addresses are absolute, and in described in terms of ops, not offsets in bytecode. Instead of using indices to constant pool and type descriptions on the side, types are used(Instead of `new #10 // class SomeClass`, notation like that: `New(SomeClass)` is used).
-### One local, one type
-`jtcpp` assumes each local variable has one, distinct type for the entire method. So, following JVM bytecode sinppet:
-```
-FLoad(1), // Local 1 is float
-F2I,
-IStore(1), // Local 1 is int
-```
-while technically speaking valid, and executable by JVM, would break this invariant. There are, however, some mitigations in place, designed to prevent most of issues arising form this kind of unusual bytecode. This invariant can be broken for types of different kinds. `Int` and `Float` are diffrent kinds. `ObjectRef(String)` and `Int` are diffrent kinds of types. But ObjectRef(String) and ObjectRef(Class) are the same kind of type, and could cause a collision and emission of invalid `.cpp` code.  This means that the snippet presented above would still work, but one like that:
-```
-New(Vector3),
-AStore(1), //Local 1 is ObjectRef(Vector3)
-...
-IConst(-1),
-IStore(1), // Ok, mitigations can see that two locals have differnent kinds, and resolve the issue.
-...
-New(Bird),
-AStore(1), // `jtcpp` can't decide if local 1 is ObjectRef(Vector3), or ObjectRef(Bird). Invalid .cpp code may be generated.
-```
-Would fail.
-## Locals are not read before they are set
-This may seem like something that should not be allowed by the JVM specification and such invalid bytecode could never be emitted. If we are talking about *chronolgical* order of reads and writes, then yes. But what about the order of ops in bytecode? Consider following:
-```
-1: Goto(5) // Executed 1st, Jumps to 5:
-2: ALoad(0) //Executed 5th,  Loads Local 0, but `jtcpp` , does not know its type(since it goes trough ops in order), so it is assumed to be Unknown. This is not an error yet!
-3: AStore(1) //Executed 6th, Stores contents of local 0 in local 1. `jtcpp` tries to deduce the type of local 1. It knows it is the same as local0,
-// but since local 0 is unknown, local 1 is unknown too. `Unknown` type is placed in generated C++ code, to be fixed by the user
-4: Goto(8) //Executed 7th, jumps to 8 
-5: New(Vector3) // Executed 2st, Pushes a reference to new Vector3 on stack
-6: AStore(0) // Executed 3rd, Stores the reference to the new Vector3 in local 0
-7: Goto(2) // Executed 4th, Jumps to 2:
-8: ALoad(1) // Executed 8th,  loads local 1, (type of which jtcpp does not know).
-9: AReturn// Executed 9th, returns value of local 9
-```
-It is a very convoluted mess of jumps. All the bytecode that breaks the invariant, in such a way, to cause issues in generated C++ code looks at least as insane as this. This is why I think it is fair to say JVM bytecode that breaks this particular invariant must be created maliciously, to break stuff.
+# jtcpp - experimental JVM bytecode to C++ converter
+## Why was `jtcpp` created?
+One of my favourite parts of programming is solving very hard problems. Engineering a solution to a problem, which seems impossible at first, helps to become confident in ones own skills, and to broader horizons. Seeing popularity of JVM-oriented languages, I wanted to learn a little bit more about the inner workings of the virtual machine powering some of the most popular languages out there. So my joinery for a problem that *definetly* needed solving began.
+
+Large chunk of the codebase comes from my previous attempt at creating a Java Runtime written in `Rust`. It did work, and could run simple programs, such as the Sieve of  Eratosthenes's, but was way too slow for my liking, which killed my motivation, so I decided to try and find something else to do.
+
+When looking deeper into both Java, and JVM, one thing struck me as odd. May people seem to believe it to be inherently slow, and many articles try to convince you it really is not. Often, when discussing performance of Java compared to other programming languages, there are many reasons stated, explaing why it is "slower" than alternatives. Of the reasons cited, one that crops up often is use of Bytecode and JVM instead of compiling to a native executable. But is this really relevant, especially with clever optimisations and JIT compiling preformed by the JVM? With this question `jtcpp`(at first `jtc`, but converting Java to `C` turned out to be not worth the hastle) was born. This project aims to asses how much compiling java to native code impacts the performance. `jtcpp` Takes in each java class separately, translating Java classes into C++ code one by one.
+## WIP
+This project was created as a learning challenge for me. It supports a subset of Java ops, but not everything works. Calling the implementation of java standard library bare-bones would be an understatement, it consists of only the things strictly necessary to run simple tests. I might add more features in the future, but it all depends on if I will be able to overcome some more serious roadblocks.
+### InvokeDynamic - codegen during runtime is shockingly common in Java.
+The single, biggest issue which makes some programs impossible to properly translate to C++ is code generation during runtime. At first, it may seem like something that would be pretty rare and used in very specific places(eg. Reflection API) but it is not. `InvokeDynamic` is an opcode which calls a method generated by the associated bootstrap method. You can find it all over the place: It is even emitted where it is not strictly necessary, because generating bytecode during runtime often leads to smaller `.jar` sizes and significantly faster startup times. This is a big issue, because `jtcpp` translates JVM bytecode to C++ before compiling, and can't emit any more code at runtime.
+### UTF16
+Currently, `jtcpp` uses UTF16 in C++ code translated bytecode, and then converts it to UTF-8 to do any IO, including printing to console. This might have a negative impact on performance of generated code.
+## Some comparisons
+*NOTE* used benchmarks can't use features not supported by `jtcpp` which could(but probably did not) negatively impact performance of code, making JVM perform worse than it should have.
+| Benchmark | `jtcpp` generated C++ code | `openjdk version "17.0.7" 2023-04-18` |
+| NBody simulation, n = 30, 1 000 000 iterations | 

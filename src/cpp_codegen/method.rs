@@ -452,6 +452,11 @@ fn write_op(op: &FatOp, mw: &mut MethodWriter) {
         FatOp::IMul => arthm_impl!(mw, VariableType::Int, "*"),
         FatOp::IDiv => arthm_impl!(mw, VariableType::Int, "/"),
         FatOp::IShl => arthm_impl!(mw, VariableType::Int, "<<"),
+        FatOp::IRem => arthm_impl!(mw, VariableType::Long, "%"),
+        FatOp::LAdd => arthm_impl!(mw, VariableType::Long, "+"),
+        FatOp::LSub => arthm_impl!(mw, VariableType::Long, "-"),
+        FatOp::LMul => arthm_impl!(mw, VariableType::Long, "*"),
+        FatOp::LDiv => arthm_impl!(mw, VariableType::Long, "/"),
         FatOp::LRem => arthm_impl!(mw, VariableType::Long, "%"),
         FatOp::D2F => convert_impl!(mw, VariableType::Double, VariableType::Float),
         FatOp::F2D => convert_impl!(mw, VariableType::Float, VariableType::Double),
@@ -489,12 +494,26 @@ fn write_op(op: &FatOp, mw: &mut MethodWriter) {
             mw.vstack_push(&im, VariableType::Int);
             format!("int {im} = {a} > {b} ? 1: ({a} == {b}? 0: -1);")
         }
+        FatOp::DCmpG => {
+            let (btype, b) = mw.vstack_pop().unwrap();
+            let (atype, a) = mw.vstack_pop().unwrap();
+            debug_assert_eq!(atype, VariableType::Double);
+            debug_assert_eq!(atype, btype);
+            // if A > B 1
+            // if A == B 0
+            // if A < B -1
+            // if A | B == NaN, then 1
+            let im = mw.get_intermidiate();
+            mw.vstack_push(&im, VariableType::Int);
+            format!("int {im} = {a} < {b}? -1 : ({a} == {b}? 0: 1);")
+        }
         FatOp::IfIGreterEqual(target) => conditional_impl!(mw, ">=", target),
         FatOp::IfICmpNe(target) => conditional_impl!(mw, "!=", target),
         FatOp::IfICmpEq(target) => conditional_impl!(mw, "==", target),
-        FatOp::IfICmpLess(target) => conditional_impl!(mw, ">", target),
+        FatOp::IfICmpLess(target) => conditional_impl!(mw, "<", target),
         FatOp::IfZero(target) => conditional_impl!(mw, "==", "0", target),
         FatOp::IfLessEqualZero(target) => conditional_impl!(mw, "<=", "0", target),
+        FatOp::IfGreterEqualZero(target) => conditional_impl!(mw, ">=", "0", target),
         FatOp::IfNotNull(target) => conditional_impl!(mw, "!=", "nullptr", target),
         FatOp::GoTo(target) => format!("goto bb{target};"),
         FatOp::Dup => {

@@ -2,7 +2,7 @@ import java.lang.Math;
 class Rand{
     static float state;
     static float Rand(){
-        state = ((state*state + .122423255f)*27.200424f - 1.234343f);
+        state = ((state*state + .122423255f)*17.200424f - 1.234343f);
         state = state%1.0f;
         return state;
     }
@@ -22,7 +22,8 @@ final class Vector3{
         this.z = z;
     }
     public float SqrMag(){
-      return this.x*this.x+this.y*this.y+this.z*this.z;
+      float sqrMag = (this.x*this.x)+(this.y*this.y)+(this.z*this.z);
+      return sqrMag;
     }
     public float Magnitude(){
       return (float)Math.sqrt(SqrMag());
@@ -48,6 +49,7 @@ final class Vector3{
     }
     public Vector3 Normalize(){
         float mag = Magnitude();
+        if (mag < 0.0001 && mag > -0.0001) mag = 1.0f;
         this.x /= mag;
         this.y /= mag;
         this.z /= mag;
@@ -67,6 +69,7 @@ class Planet{
   Vector3 position;
   Vector3 velocity;
   float mass = 1.0f;
+  final float TIME_SCLAE = 0.001f;
   public Planet(){
       this.mass = 1.0f + Rand.Rand()*Rand.Rand()*2.0f; 
       this.position = Vector3.Random();
@@ -75,9 +78,10 @@ class Planet{
   public void SimulateInteraction(Planet other){
       float distance = Vector3.Distance(this.position,other.position);
       Vector3 diffrence = other.position.clone().Sub(this.position);
+      if(distance < 0.00001)return;
       float force = (this.mass + other.mass)/(distance*distance);
       Vector3 direction = diffrence.Normalize();
-      this.velocity.Add(direction.Mul(force));
+      this.velocity.Add(direction.Mul(force*TIME_SCLAE).Mul(TIME_SCLAE));
   }
   public void Tick(){
       position.Add(velocity);
@@ -128,10 +132,10 @@ class NBody{
     return new NBody(pc);
   }
   public static void main(String[] args){
-    NBody n = new NBody(30);
+    NBody n = new NBody(900);
     for(int i = 0; i < 1000; i++){
       n.Tick();
-      n.Display();
+      if(i%100 == 0)n.Display();
     }
   }
 }
