@@ -2,14 +2,13 @@
 #include <memory>
 #include <cmath>  
 #include <assert.h>
-//TEMPORARY!!
-struct gc{};
+#include "gc_cpp.h"
 namespace java{namespace lang{class Object;};};
-class java::lang::Object : gc{
+class java::lang::Object : public gc{
 public:
       static void _init___V(java::lang::Object* obj);
 };
-template <typename T> class RuntimeArray : java::lang::Object{
+template <typename T> class RuntimeArray : public java::lang::Object{
       T* data;
       int length;
 public:

@@ -3,16 +3,23 @@ mod cpp_codegen;
 mod fatops;
 mod importer;
 mod method;
-use class::Class;
 use include_dir::{include_dir, Dir};
-use method::Method;
+use {class::Class, method::Method};
 static STDLIB_DIR: Dir<'_> = include_dir!("$CARGO_MANIFEST_DIR/stdlib");
+static GC_CPP_HEADER: &[u8] =
+    include_bytes!(concat!(env!("OUT_DIR"), "/bdwgc/include/gc/gc_cpp.h"));
+static GC_HEADER: &[u8] = include_bytes!(concat!(env!("OUT_DIR"), "/bdwgc/include/gc/gc.h"));
+static GC_VERSION_HEADER: &[u8] =
+    include_bytes!(concat!(env!("OUT_DIR"), "/bdwgc/include/gc/gc_version.h"));
+static GC_CONFIG_MACROS: &[u8] = include_bytes!(concat!(
+    env!("OUT_DIR"),
+    "/bdwgc/include/gc/gc_config_macros.h"
+));
 use crate::fatops::ClassInfo;
 use crate::fatops::FatOp;
 use crate::importer::{BytecodeImportError, ImportedJavaClass};
 use clap::Parser;
-use std::io::Write;
-use std::path::PathBuf;
+use std::{io::Write, path::PathBuf};
 pub type IString = Box<str>;
 fn method_name_to_c_name(method_name: &str) -> IString {
     match method_name {
@@ -108,17 +115,17 @@ impl VariableType {
     }
 }
 impl VariableType {
-    fn assignable(&self,other:&Self)->bool{
-        match self{
-            Self::Float => matches!(other,Self::Double |Self::Float ),
-            Self::Double =>  matches!(other,Self::Double | Self::Float),
-            Self::Long => matches!(other,Self::Long | Self::Int | Self::Byte | Self::Short),
-            Self::Int => matches!(other,Self::Int | Self::Byte | Self::Short),
-            Self::Bool => matches!(other,Self::Long | Self::Int | Self::Byte | Self::Short),
-            Self::Byte => matches!(other,Self::Long | Self::Int | Self::Byte | Self::Short),
-            Self::Short => matches!(other,Self::Long | Self::Int | Self::Byte | Self::Short),
-            Self::Char => matches!(other,Self::Long | Self::Int | Self::Byte | Self::Short),
-            Self::Void => matches!(other,Self::Long | Self::Int | Self::Byte | Self::Short),
+    fn assignable(&self, other: &Self) -> bool {
+        match self {
+            Self::Float => matches!(other, Self::Double | Self::Float),
+            Self::Double => matches!(other, Self::Double | Self::Float),
+            Self::Long => matches!(other, Self::Long | Self::Int | Self::Byte | Self::Short),
+            Self::Int => matches!(other, Self::Int | Self::Byte | Self::Short),
+            Self::Bool => matches!(other, Self::Long | Self::Int | Self::Byte | Self::Short),
+            Self::Byte => matches!(other, Self::Long | Self::Int | Self::Byte | Self::Short),
+            Self::Short => matches!(other, Self::Long | Self::Int | Self::Byte | Self::Short),
+            Self::Char => matches!(other, Self::Long | Self::Int | Self::Byte | Self::Short),
+            Self::Void => matches!(other, Self::Long | Self::Int | Self::Byte | Self::Short),
             Self::ObjectRef(_) => true,
             Self::ArrayRef(_) => true,
         }
@@ -240,6 +247,16 @@ fn print_progress(curr: usize, whole: usize) {
     }
     std::io::stdout().flush().unwrap();
 }
+macro_rules! write_cpp_file {
+    ($bytes:ident,$target_path:ident,$name:literal) => {
+        let mut target_path = $target_path.clone();
+        target_path.push($name);
+        if !target_path.exists() {
+            let mut target_out = std::fs::File::create(target_path)?;
+            target_out.write_all($bytes)?;
+        }
+    };
+}
 impl CompilationContext {
     fn write_stdlib(target_path: &PathBuf) -> std::io::Result<()> {
         for file in STDLIB_DIR.files() {
@@ -250,6 +267,10 @@ impl CompilationContext {
                 target_out.write_all(file.contents())?;
             }
         }
+        write_cpp_file!(GC_CPP_HEADER, target_path, "gc_cpp.h");
+        write_cpp_file!(GC_HEADER, target_path, "gc.h");
+        write_cpp_file!(GC_VERSION_HEADER, target_path, "gc_version.h");
+        write_cpp_file!(GC_CONFIG_MACROS, target_path, "gc_config_macros.h");
         Ok(())
     }
     fn new(ca: &ConvertionArgs) -> Result<Self, BytecodeImportError> {

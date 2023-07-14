@@ -3,8 +3,7 @@ use crate::fatops::FatOp;
 use crate::ClassInfo;
 use crate::IString;
 use crate::VariableType;
-use std::collections::HashSet;
-use std::io::Write;
+use std::{collections::HashSet, io::Write};
 struct MethodWriter {
     includes: super::IncludeBuilder,
     code: String,

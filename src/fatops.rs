@@ -319,7 +319,11 @@ pub(crate) fn expand_ops(ops: &[(OpCode, u16)], class: &ImportedJavaClass) -> Bo
                 let const_item = class.lookup_item(*index).unwrap();
                 match const_item {
                     crate::importer::ConstantItem::ConstString { string_index } => {
-                        let string = class.lookup_utf8(*string_index).unwrap().replace("\n","\\n").replace("\r","\\r");
+                        let string = class
+                            .lookup_utf8(*string_index)
+                            .unwrap()
+                            .replace("\n", "\\n")
+                            .replace("\r", "\\r");
                         FatOp::StringConst(string.into())
                     }
                     crate::importer::ConstantItem::Class { name_index } => {
