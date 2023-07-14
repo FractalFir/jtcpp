@@ -93,7 +93,6 @@ pub(crate) fn create_header<W: Write>(out: &mut W, class: &Class) -> std::io::Re
         if let Some(dep) = method.ret_val().dependency() {
             includes.add_include(&dep);
         }
-        println!("method_name:{method_name}")
     }
     let mut class_fields = String::new();
     for (field_name, field_type) in class.static_fields() {

@@ -32,8 +32,14 @@ pub struct ClassInfo {
 impl ClassInfo {
     pub fn from_java_path(java_path: &str) -> Self {
         let cpp_class = crate::class::java_class_to_cpp_class(java_path);
-        assert!(!cpp_class.contains('_'));
+        //assert!(!cpp_class.contains('_'),"cpp_class: {java_path} {cpp_class}");
         Self { cpp_class }
+    }
+    pub fn unknown()->Self{
+        Self{cpp_class:"UNKNOWN".into()}
+    }
+    pub fn is_unknown(&self)->bool{
+        &*self.cpp_class == "UNKNOWN"
     }
     pub fn cpp_class(&self) -> &str {
         &self.cpp_class
@@ -100,7 +106,7 @@ pub(crate) enum FatOp {
     IUShr,
     InvokeSpecial(ClassInfo, IString, Box<[VariableType]>, VariableType),
     InvokeStatic(ClassInfo, IString, Box<[VariableType]>, VariableType),
-    InvokeInterface, //Unfinshed
+    InvokeInterface(ClassInfo, IString, Box<[VariableType]>, VariableType), //Unfinshed
     InvokeDynamic,   //Temporarly ignored(Hard to parse)
     InvokeVirtual(ClassInfo, IString, Box<[VariableType]>, VariableType),
     ZGetStatic(ClassInfo, IString),
@@ -134,6 +140,8 @@ pub(crate) enum FatOp {
         type_info: ClassInfo,
     },
     AAPutStatic {
+        class_info: ClassInfo,
+        field_name: IString,
         atype: VariableType,
     },
     CPutStatic(ClassInfo, IString),
@@ -433,7 +441,8 @@ pub(crate) fn expand_ops(ops: &[(OpCode, u16)], class: &ImportedJavaClass) -> Bo
                         field_name,
                         type_info: type_class_info,
                     },
-                    VariableType::ArrayRef(atype) => FatOp::AAPutStatic { atype: *atype },
+                    VariableType::ArrayRef(atype) => FatOp::AAPutStatic { class_info,
+                        field_name,atype: *atype },
                     VariableType::Void => panic!("ERR: PutStatic op with invalid field type Void!"),
                 }
             }
@@ -607,10 +616,10 @@ pub(crate) fn expand_ops(ops: &[(OpCode, u16)], class: &ImportedJavaClass) -> Bo
                     .replace("<init>", "_init_")
                     .replace("<cinit>", "_cinit_")
                     .into();
-                if method_name.contains("_init_") {
+                if method_name.contains("_init_")|| method_name.contains("_cinit_") {
                     FatOp::InvokeSpecial(class_info, method_name, args.into(), ret)
                 } else {
-                    FatOp::InvokeSpecial(class_info, method_name, args.into(), ret)
+                    FatOp::InvokeVirtual(class_info, method_name, args.into(), ret)
                 }
             }
             OpCode::InvokeStatic(index) => {
@@ -624,8 +633,9 @@ pub(crate) fn expand_ops(ops: &[(OpCode, u16)], class: &ImportedJavaClass) -> Bo
                 FatOp::InvokeVirtual(class_info, name, args.into(), ret)
             }
             OpCode::InvokeInterface(index) => {
-                //TODO:Potentially handle static interface methods.
-                FatOp::InvokeInterface
+                let (class, name, args, ret) = methodref_to_name_and_sig(*index, class);
+                let class_info = ClassInfo::from_java_path(&class);
+                FatOp::InvokeInterface(class_info, name, args.into(), ret)
             }
             OpCode::InvokeDynamic(index) => {
                 let (bootstrap_method_attr_index, _name_and_type_index) =
@@ -633,10 +643,11 @@ pub(crate) fn expand_ops(ops: &[(OpCode, u16)], class: &ImportedJavaClass) -> Bo
                 let bootstrap_method = class
                     .lookup_bootstrap_method(bootstrap_method_attr_index)
                     .unwrap();
-                let (_reference_kind, _reference_index) = class
+                let (reference_kind, reference_index) = class
                     .lookup_method_handle(bootstrap_method.bootstrap_method_ref)
                     .unwrap();
-                //println!("reference_kind:{reference_kind},reference_index:{reference_index}");
+                println!("reference_kind:{reference_kind},reference_index:{reference_index}");
+                panic!();
                 //let (name, argc) = methodref_to_mangled_and_argc(bootstrap_method.bootstrap_method_ref, class);
                 FatOp::InvokeDynamic
                 //FatOp::InvokeDynamic(name, argc)

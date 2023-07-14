@@ -499,7 +499,7 @@ pub(crate) fn load_class<R: std::io::Read>(
     }
     let minor = load_u16(src)?;
     let major = load_u16(src)?;
-    if !(50..=64).contains(&major) || minor != 0 {
+    if !(40..=64).contains(&major) || minor != 0 {
         return Err(BytecodeImportError::UnsuportedVersion(major, minor));
     }
     let constant_pool_count = load_u16(src)?;

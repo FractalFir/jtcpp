@@ -97,7 +97,6 @@ impl Class {
                     method.name(java_class),
                     method.descriptor(java_class),
                 );
-                println!("{mangled_name} is virtual!");
                 let method = Method::from_raw_method(method, &mangled_name, java_class);
                 virtual_methods.push((mangled_name.into(), method));
             } else {

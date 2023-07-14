@@ -124,6 +124,10 @@ impl VariableType {
             //_=>todo!("Can't get ctype of {self:?}!"),
         }
     }
+    fn is_unknown(&self)->bool{
+        if let Self::ObjectRef(class_info) = self{class_info.is_unknown()}
+        else{false}
+    }
     fn type_postifx(&self) -> IString {
         match self {
             Self::Float => "f".into(),
@@ -139,7 +143,6 @@ impl VariableType {
         }
     }
 }
-
 pub(crate) fn field_desc_str_to_ftype(desc_str: &str, th: usize) -> VariableType {
     let beg = desc_str.chars().nth(th).unwrap();
     match beg {
