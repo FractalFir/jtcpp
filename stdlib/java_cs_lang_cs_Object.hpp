@@ -30,3 +30,33 @@ public:
             return this->length;
       }
 };
+template <> class RuntimeArray<bool>{
+      bool* data;
+      int length;
+public:
+      RuntimeArray(int length){
+            this->data = new bool[length];
+            this->length = length;
+      }
+      bool Get(int index){
+            return this->data[index];
+      }
+      void Set(int index,bool value){
+            this->data[index] = value;
+      }
+      bool* GetPtr(int index){
+            return &(this->data[index]);
+      }
+      int GetLength(){
+            return this->length;
+      }
+      void Set(int index, uint8_t value){
+            this->data[index] = (bool)value;
+      }
+      void Set(int index, uint16_t value){
+            this->data[index] = (bool)value;
+      }
+      void Set(int index, int value){
+            this->data[index] = (bool)value;
+      }
+};

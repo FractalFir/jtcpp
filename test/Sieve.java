@@ -25,7 +25,7 @@ public class Sieve{
           }
     }
     public static void main(String[] args){
-      Init(1000000);
+      Init(100000000);
       Run();
       Display();
     }

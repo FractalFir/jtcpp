@@ -116,6 +116,5 @@ impl Class {
             static_methods,
             virtual_methods,
         }
-        //todo!("name:{name} parrent:{parrent} fields:{fields:?} static_fields:{static_fields:?}");
     }
 }

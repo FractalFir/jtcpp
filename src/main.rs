@@ -108,25 +108,43 @@ impl VariableType {
     }
 }
 impl VariableType {
+    fn assignable(&self,other:&Self)->bool{
+        match self{
+            Self::Float => matches!(other,Self::Double |Self::Float ),
+            Self::Double =>  matches!(other,Self::Double | Self::Float),
+            Self::Long => matches!(other,Self::Long | Self::Int | Self::Byte | Self::Short),
+            Self::Int => matches!(other,Self::Int | Self::Byte | Self::Short),
+            Self::Bool => matches!(other,Self::Long | Self::Int | Self::Byte | Self::Short),
+            Self::Byte => matches!(other,Self::Long | Self::Int | Self::Byte | Self::Short),
+            Self::Short => matches!(other,Self::Long | Self::Int | Self::Byte | Self::Short),
+            Self::Char => matches!(other,Self::Long | Self::Int | Self::Byte | Self::Short),
+            Self::Void => matches!(other,Self::Long | Self::Int | Self::Byte | Self::Short),
+            Self::ObjectRef(_) => true,
+            Self::ArrayRef(_) => true,
+        }
+    }
     fn c_type(&self) -> IString {
         match self {
             Self::Float => "float".into(),
             Self::Double => "double".into(),
             Self::Long => "long".into(),
-            Self::Int => "int".into(),
+            Self::Int => "int32_t".into(),
             Self::Bool => "bool".into(),
-            Self::Byte => "char".into(),
-            Self::Short => "short".into(),
-            Self::Char => "short".into(),
+            Self::Byte => "int8_t".into(),
+            Self::Short => "int16_t".into(),
+            Self::Char => "char16_t".into(),
             Self::Void => "void".into(),
             Self::ObjectRef(info) => format!("{}*", info.cpp_class()).into(),
             Self::ArrayRef(atype) => format!("RuntimeArray<{}>*", atype.c_type()).into(),
             //_=>todo!("Can't get ctype of {self:?}!"),
         }
     }
-    fn is_unknown(&self)->bool{
-        if let Self::ObjectRef(class_info) = self{class_info.is_unknown()}
-        else{false}
+    fn is_unknown(&self) -> bool {
+        if let Self::ObjectRef(class_info) = self {
+            class_info.is_unknown()
+        } else {
+            false
+        }
     }
     fn type_postifx(&self) -> IString {
         match self {
@@ -138,7 +156,7 @@ impl VariableType {
             Self::Byte => "b".into(),
             Self::Short => "s".into(),
             Self::ObjectRef(_) => "a".into(),
-            Self::ArrayRef(_atype) => "aa".into(),
+            Self::ArrayRef(_atype) => "a".into(),
             _ => todo!("Can't get type postifx of {self:?}!"),
         }
     }

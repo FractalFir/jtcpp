@@ -35,10 +35,12 @@ impl ClassInfo {
         //assert!(!cpp_class.contains('_'),"cpp_class: {java_path} {cpp_class}");
         Self { cpp_class }
     }
-    pub fn unknown()->Self{
-        Self{cpp_class:"UNKNOWN".into()}
+    pub fn unknown() -> Self {
+        Self {
+            cpp_class: "UNKNOWN".into(),
+        }
     }
-    pub fn is_unknown(&self)->bool{
+    pub fn is_unknown(&self) -> bool {
         &*self.cpp_class == "UNKNOWN"
     }
     pub fn cpp_class(&self) -> &str {
@@ -107,7 +109,7 @@ pub(crate) enum FatOp {
     InvokeSpecial(ClassInfo, IString, Box<[VariableType]>, VariableType),
     InvokeStatic(ClassInfo, IString, Box<[VariableType]>, VariableType),
     InvokeInterface(ClassInfo, IString, Box<[VariableType]>, VariableType), //Unfinshed
-    InvokeDynamic,   //Temporarly ignored(Hard to parse)
+    InvokeDynamic, //Temporarly ignored(Hard to parse)
     InvokeVirtual(ClassInfo, IString, Box<[VariableType]>, VariableType),
     ZGetStatic(ClassInfo, IString),
     BGetStatic(ClassInfo, IString),
@@ -122,8 +124,8 @@ pub(crate) enum FatOp {
         type_info: ClassInfo,
     },
     AAGetStatic {
-        //class_name: IString,
-        //field_name: IString,
+        class_info: ClassInfo,
+        static_name: IString,
         atype: VariableType,
     },
     CGetStatic(ClassInfo, IString),
@@ -317,7 +319,7 @@ pub(crate) fn expand_ops(ops: &[(OpCode, u16)], class: &ImportedJavaClass) -> Bo
                 let const_item = class.lookup_item(*index).unwrap();
                 match const_item {
                     crate::importer::ConstantItem::ConstString { string_index } => {
-                        let string = class.lookup_utf8(*string_index).unwrap();
+                        let string = class.lookup_utf8(*string_index).unwrap().replace("\n","\\n").replace("\r","\\r");
                         FatOp::StringConst(string.into())
                     }
                     crate::importer::ConstantItem::Class { name_index } => {
@@ -420,7 +422,11 @@ pub(crate) fn expand_ops(ops: &[(OpCode, u16)], class: &ImportedJavaClass) -> Bo
                         static_name,
                         type_info: type_class_info,
                     },
-                    VariableType::ArrayRef(atype) => FatOp::AAGetStatic { atype: *atype },
+                    VariableType::ArrayRef(atype) => FatOp::AAGetStatic {
+                        class_info,
+                        static_name,
+                        atype: *atype,
+                    },
                     VariableType::Void => panic!("ERR: GetStatic op with invalid field type Void!"),
                 }
             }
@@ -441,8 +447,11 @@ pub(crate) fn expand_ops(ops: &[(OpCode, u16)], class: &ImportedJavaClass) -> Bo
                         field_name,
                         type_info: type_class_info,
                     },
-                    VariableType::ArrayRef(atype) => FatOp::AAPutStatic { class_info,
-                        field_name,atype: *atype },
+                    VariableType::ArrayRef(atype) => FatOp::AAPutStatic {
+                        class_info,
+                        field_name,
+                        atype: *atype,
+                    },
                     VariableType::Void => panic!("ERR: PutStatic op with invalid field type Void!"),
                 }
             }
@@ -616,7 +625,7 @@ pub(crate) fn expand_ops(ops: &[(OpCode, u16)], class: &ImportedJavaClass) -> Bo
                     .replace("<init>", "_init_")
                     .replace("<cinit>", "_cinit_")
                     .into();
-                if method_name.contains("_init_")|| method_name.contains("_cinit_") {
+                if method_name.contains("_init_") || method_name.contains("_cinit_") {
                     FatOp::InvokeSpecial(class_info, method_name, args.into(), ret)
                 } else {
                     FatOp::InvokeVirtual(class_info, method_name, args.into(), ret)
