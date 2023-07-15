@@ -826,6 +826,18 @@ pub(crate) fn create_method_impl(
         ),
         method,
     );
+    if !method.is_virtual()
+        && method.name() == "main__arr_java_cs_lang_cs_String__V"
+        && *method.ret_val() == VariableType::Void
+        && method.args()
+            == &[VariableType::ArrayRef(Box::new(VariableType::ObjectRef(
+                ClassInfo::from_java_path("java/lang/String"),
+            )))]
+    {
+        write!(out,"int main(int argc, char** argv){{\n\t//Skip fist exec path\n\targc -= 1;argv += 1;\n\tManagedPointer<RuntimeArray<ManagedPointer<java::lang::String>>> args = managed_from_raw(new RuntimeArray<ManagedPointer<java::lang::String>>(argc));\n\tfor(int arg = 0; arg < argc; arg++){{\n\t\targs->Set(arg,java::lang::String::from_cstring(argv[arg]));\n\t}}\n\t{class_name}::{method_name}(args);\n\treturn 0;\n}}\n",
+        class_name = method.class_name(),
+        method_name = method.name())?;
+    }
     writer.set_sig(&fn_sig);
     writer.add_include(method.class_name());
     if method.is_virtual() {

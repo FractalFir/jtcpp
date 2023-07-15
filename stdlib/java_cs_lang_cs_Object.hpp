@@ -4,8 +4,13 @@
 #include <memory>
 #include <cmath>  
 #include <assert.h>
-#include "gc_cpp.h"
 #include <cstring>
+
+#ifdef GC_OBJS
+#include "gc_cpp.h"
+#else
+struct gc{}
+#endif
 #ifdef ARC_OBJS
 #include <memory>
 template<typename T> using ManagedPointer = std::shared_ptr<T>;
@@ -19,7 +24,7 @@ template<typename T> inline ManagedPointer<T> managed_from_raw(T* ptr){return pt
 #define new_managed(TYPE,ARGS) new TYPE(ARGS)
 #endif
 namespace java{namespace lang{class Object;};};
-class java::lang::Object : public gc
+class java::lang::Object: public gc
 #ifdef ARC_OBJS
 ,public std::enable_shared_from_this<java::lang::Object>
 #endif

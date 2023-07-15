@@ -1,18 +1,18 @@
 #include "java_cs_lang_cs_String.hpp"
 #include <cstring>
+#include <codecvt>
 java::lang::String::String(const char16_t* buffer,size_t length){
     bool addNull = false;
     if (buffer[length - 1] != 0){
         length += 1;
         addNull = true;
     }
-    char16_t* new_buffer = new char16_t[length];
-    std::memcpy(new_buffer,buffer,length*sizeof(char16_t));
-    if (addNull)new_buffer[length - 1] = 0;
-    this->buffer = new_buffer;
-    this->length = length;
+    this->data = std::u16string();
+    this->data.resize(length);
+    memcpy(this->data.data(),buffer,length*sizeof(char16_t));
+    if (addNull)this->data.data()[length - 1] = 0;
 }
-char16_t* java::lang::String::GetBuffer(){return this->buffer;}
+char16_t* java::lang::String::GetBuffer(){return this->data.data();}
 java::lang::String::String(const char16_t* null_terminated_buffer){
     unsigned int length = 0;
     const char16_t* curr = null_terminated_buffer;
@@ -20,8 +20,15 @@ java::lang::String::String(const char16_t* null_terminated_buffer){
         curr += 1;
         length += 1;
     }
-    char16_t* new_buffer = new char16_t[length];
-    std::memcpy(new_buffer,null_terminated_buffer,length*sizeof(char16_t));
-    this->buffer = new_buffer;
-    this->length = length;
+    this->data = std::u16string();
+    this->data.resize(length);
+    memcpy(this->data.data(),null_terminated_buffer,length*sizeof(char16_t));
+}
+#include <stdexcept>
+java::lang::String::String(std::u16string data){this->data = data;}
+ManagedPointer<java::lang::String> java::lang::String::from_cstring(char* cstring){
+    //std::codecvt_utf16<char> convert;
+    //std::mbstate_t mystate = std::mbstate_t();
+    throw new std::runtime_error("Can't yet translate ASCI strings, such as CLI args, to UTF-16. Converting ASCI to UTF16 in C++ is, sadly, very confusing. :(");
+    //return managed_from_raw(new String(u16.data()));
 }
