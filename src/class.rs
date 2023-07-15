@@ -4,6 +4,7 @@ use crate::{
 pub(crate) struct Class {
     name: IString,
     parrent: IString,
+    ifaces: Box<[IString]>,
     fields: Vec<(IString, VariableType)>,
     static_fields: Vec<(IString, VariableType)>,
     static_methods: Vec<(IString, Method)>,
@@ -108,10 +109,12 @@ impl Class {
                 static_methods.push((mangled_name.into(), method));
             }
         }
+        let ifaces = Vec::new();
         Class {
             name: class_name,
             parrent,
             fields,
+            ifaces: ifaces.into(),
             static_fields,
             static_methods,
             virtual_methods,

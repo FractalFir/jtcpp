@@ -3,8 +3,13 @@ mod cpp_codegen;
 mod fatops;
 mod importer;
 mod method;
+use crate::fatops::{ClassInfo, FatOp};
+use crate::importer::{BytecodeImportError, ImportedJavaClass};
+use clap::Parser;
 use include_dir::{include_dir, Dir};
+use std::{io::Write, path::PathBuf};
 use {class::Class, method::Method};
+pub type IString = Box<str>;
 static STDLIB_DIR: Dir<'_> = include_dir!("$CARGO_MANIFEST_DIR/stdlib");
 static GC_CPP_HEADER: &[u8] =
     include_bytes!(concat!(env!("OUT_DIR"), "/bdwgc/include/gc/gc_cpp.h"));
@@ -15,20 +20,9 @@ static GC_CONFIG_MACROS: &[u8] = include_bytes!(concat!(
     env!("OUT_DIR"),
     "/bdwgc/include/gc/gc_config_macros.h"
 ));
-static GC_SO: &[u8] = include_bytes!(concat!(
-    env!("OUT_DIR"),
-    "/bdwgc/out/libgc.so"
-));
-static GCCPP_SO: &[u8] = include_bytes!(concat!(
-    env!("OUT_DIR"),
-    "/bdwgc/out/libgccpp.so"
-));
-use crate::fatops::ClassInfo;
-use crate::fatops::FatOp;
-use crate::importer::{BytecodeImportError, ImportedJavaClass};
-use clap::Parser;
-use std::{io::Write, path::PathBuf};
-pub type IString = Box<str>;
+static GC_SO: &[u8] = include_bytes!(concat!(env!("OUT_DIR"), "/bdwgc/out/libgc.so"));
+static GCCPP_SO: &[u8] = include_bytes!(concat!(env!("OUT_DIR"), "/bdwgc/out/libgccpp.so"));
+
 fn method_name_to_c_name(method_name: &str) -> IString {
     match method_name {
         "<init>" => "_init_".into(),
@@ -149,9 +143,10 @@ impl VariableType {
             Self::Short => "int16_t".into(),
             Self::Char => "char16_t".into(),
             Self::Void => "void".into(),
-            Self::ObjectRef(info) => format!("{}*", info.cpp_class()).into(),
-            Self::ArrayRef(atype) => format!("RuntimeArray<{}>*", atype.c_type()).into(),
-            //_=>todo!("Can't get ctype of {self:?}!"),
+            Self::ObjectRef(info) => format!("ManagedPointer<{}>", info.cpp_class()).into(),
+            Self::ArrayRef(atype) => {
+                format!("ManagedPointer<RuntimeArray<{}>>", atype.c_type()).into()
+            } //_=>todo!("Can't get ctype of {self:?}!"),
         }
     }
     fn is_unknown(&self) -> bool {

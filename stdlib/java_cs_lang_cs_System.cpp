@@ -1,3 +1,3 @@
 #include "java_cs_lang_cs_System.hpp"
 #include <iostream>
-java::io::PrintStream* java::lang::System::out = new java::io::PrintStream(new StdOut());
+ManagedPointer<java::io::PrintStream> java::lang::System::out = managed_from_raw(new java::io::PrintStream(new StdOut()));

@@ -4,5 +4,5 @@
 namespace java{namespace lang{class System;};};
 class java::lang::System:public java::lang::Object{
     public:
-        static java::io::PrintStream* out;// = new java_cs_io_cs_PrintStream(get_std_out())
+        static ManagedPointer<java::io::PrintStream> out;
 };

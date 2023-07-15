@@ -1,8 +1,5 @@
 use super::IncludeBuilder;
-use crate::fatops::FatOp;
-use crate::ClassInfo;
-use crate::IString;
-use crate::VariableType;
+use crate::{fatops::FatOp, ClassInfo, IString, VariableType};
 use std::{collections::HashSet, io::Write};
 struct MethodWriter {
     includes: super::IncludeBuilder,
@@ -530,7 +527,7 @@ fn write_op(op: &FatOp, mw: &mut MethodWriter) {
             mw.vstack_push(&im, VariableType::ObjectRef(class_info.clone()));
             mw.add_include(&*class_info.class_path());
             format!(
-                "{name}* {im} = new {name}();",
+                "ManagedPointer<{name}> {im} = new_managed({name},);",
                 name = class_info.cpp_class()
             )
         }
@@ -563,7 +560,7 @@ fn write_op(op: &FatOp, mw: &mut MethodWriter) {
             );
             mw.add_include(&*class_info.class_path());
             format!(
-                "RuntimeArray<{name}*>* {im} = new RuntimeArray<{name}*>({length});",
+                "ManagedPointer<RuntimeArray<ManagedPointer<{name}>>> {im} = managed_from_raw(new RuntimeArray<ManagedPointer<{name}>>({length}));",
                 name = class_info.cpp_class()
             )
         }
@@ -572,14 +569,14 @@ fn write_op(op: &FatOp, mw: &mut MethodWriter) {
             let (length_type, length) = mw.vstack_pop().unwrap();
             assert_eq!(length_type, VariableType::Int);
             mw.vstack_push(&im, VariableType::ArrayRef(Box::new(VariableType::Int)));
-            format!("RuntimeArray<int>* {im} = new RuntimeArray<int>({length});",)
+            format!("ManagedPointer<RuntimeArray<int>> {im} = managed_from_raw(new RuntimeArray<int>({length}));",)
         }
         FatOp::ZNewArray => {
             let im = mw.get_intermidiate();
             let (length_type, length) = mw.vstack_pop().unwrap();
             assert_eq!(length_type, VariableType::Int);
             mw.vstack_push(&im, VariableType::ArrayRef(Box::new(VariableType::Bool)));
-            format!("RuntimeArray<bool>* {im} = new RuntimeArray<bool>({length});",)
+            format!("ManagedPointer<RuntimeArray<bool>> {im} = managed_from_raw(new RuntimeArray<bool>({length}));",)
         }
         FatOp::StringConst(const_string) => {
             let im_name = mw.get_intermidiate();
@@ -590,7 +587,7 @@ fn write_op(op: &FatOp, mw: &mut MethodWriter) {
                     "java/lang/String",
                 )),
             );
-            format!("java::lang::String* {im_name} = new java::lang::String(u\"{const_string}\");")
+            format!("ManagedPointer<java::lang::String> {im_name} = managed_from_raw(new java::lang::String(u\"{const_string}\"));")
         }
         FatOp::InvokeVirtual(_class_name, vmethod_name, args, ret) => {
             let mut code = String::new();
@@ -766,7 +763,6 @@ fn fat_ops_to_bb_tree(fatops: &[FatOp]) -> Box<[BasicBlock]> {
     let mut basic_spans: Vec<(usize, &[FatOp])> = Vec::new();
     let mut bb_beg = 0;
     for (index, _op) in fatops.iter().enumerate() {
-        //println!("{index}:{op:?}");
         if jump_targets.contains(&index) {
             basic_spans.push((bb_beg, &fatops[bb_beg..index]));
             bb_beg = index;
@@ -792,7 +788,7 @@ fn push_method_sig_args(target: &mut String, method_name: &str, method: &crate::
         ret = method.ret_val().c_type()
     ));
     let mut margs = method.args().iter();
-    //println!("\n\t{name}::{method_name}->{margs:?}",name = self.name);
+
     match margs.next() {
         Some(arg) => {
             target.push_str(&format!(
@@ -835,7 +831,10 @@ pub(crate) fn create_method_impl(
     if method.is_virtual() {
         writer.push_locals(
             "loc0a",
-            &format!("\t{class}* l0a = this;\n", class = method.class_name()),
+            &format!(
+                "\tManagedPointer<{class}> l0a = managed_from_this({class});\n",
+                class = method.class_name()
+            ),
         );
     }
     for bb in bb_tree.iter() {

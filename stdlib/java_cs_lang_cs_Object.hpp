@@ -1,12 +1,31 @@
 #pragma once
+#include "config.hpp"
+#include <bit>
 #include <memory>
 #include <cmath>  
 #include <assert.h>
 #include "gc_cpp.h"
+#include <cstring>
+#ifdef ARC_OBJS
+#include <memory>
+template<typename T> using ManagedPointer = std::shared_ptr<T>;
+template<typename T> inline ManagedPointer<T> managed_from_raw(T* ptr){return std::shared_ptr<T>(ptr);}
+#define new_managed(TYPE,ARGS) std::make_shared<TYPE>(ARGS)
+#define managed_from_this(TYPE) (std::static_pointer_cast<TYPE>(this->shared_from_this()))
+#else
+template<typename T> using ManagedPointer = T*;
+template<typename T> inline ManagedPointer<T> managed_from_raw(T* ptr){return ptr;}
+#define managed_from_this(TYPE) this
+#define new_managed(TYPE,ARGS) new TYPE(ARGS)
+#endif
 namespace java{namespace lang{class Object;};};
-class java::lang::Object : public gc{
+class java::lang::Object : public gc
+#ifdef ARC_OBJS
+,public std::enable_shared_from_this<java::lang::Object>
+#endif
+{
 public:
-      static void _init___V(java::lang::Object* obj);
+      static void _init___V(ManagedPointer<java::lang::Object> obj);
 };
 template <typename T> class RuntimeArray : public java::lang::Object{
       T* data;

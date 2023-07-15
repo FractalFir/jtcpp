@@ -116,11 +116,11 @@ pub(crate) fn create_header<W: Write>(out: &mut W, class: &Class) -> std::io::Re
     if class.cpp_name().contains("::") {
         write!(out, "{}\n", create_namespace_def(class.cpp_name()))?;
     }
+    let cpp_class_path = class.cpp_name();
     write!(
         out,
-        "#pragma once\n{includes}\nstruct {name}: {super_name}{{\n{class_fields}{class_methods}}};",
+        "#pragma once\n{includes}\nstruct {cpp_class_path}: {super_name}\n{{\n{class_fields}{class_methods}}};",
         includes = includes.get_code(),
-        name = class.cpp_name(),
         super_name = class.parrent_cpp_name()
     )
 }
