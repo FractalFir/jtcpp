@@ -258,9 +258,10 @@ macro_rules! conditional_impl {
     }};
 }
 fn write_op(op: &FatOp, mw: &mut MethodWriter) {
-    println!("");
-    mw.print_stack();
-    println!("op:{op:?}");
+    // Uncoment for more diagnosis
+    //println!("");
+    //mw.print_stack();
+    //println!("op:{op:?}");
     let code = match op {
         FatOp::ALoad(index) => load_impl!(
             mw,
@@ -657,7 +658,7 @@ fn write_op(op: &FatOp, mw: &mut MethodWriter) {
             } else {
                 args.len()
             };
-            println!("argc:{argc}");
+            //println!("argc:{argc}");
             let mut args: Vec<IString> = Vec::with_capacity(argc);
             for _ in 0..argc {
                 args.push(mw.vstack_pop().unwrap().1);

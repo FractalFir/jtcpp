@@ -278,7 +278,7 @@ impl CompilationContext {
         write_cpp_file!(GCCPP_SO, target_path, "libgccpp.so");
         Ok(())
     }
-    fn new(ca: &ConvertionArgs) -> Result<Self, BytecodeImportError> {
+    fn new(ca: &ConvertionArgs) -> Result<(), BytecodeImportError> {
         let mut loaded_classes = Vec::new();
         for (index, path) in ca.source_files.iter().enumerate() {
             let path_disp = path.display();
@@ -392,7 +392,10 @@ impl CompilationContext {
         println!(
             "\r Finished stage 4(Generating Source files) of JVM bytecode to C++ translation."
         );
-        todo!();
+        println!(
+            "DONE! go to the target directory {target}, and run `g++ *.cpp -Ofast -L. -lgc -lgccpp` to build your converted code.", target = ca.out.display(),
+        );
+        Ok(())
     }
 }
 fn main() {
