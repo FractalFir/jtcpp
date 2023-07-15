@@ -32,13 +32,6 @@ fn clone_libatomic_ops() -> Result<Child> {
         .spawn()
 }
 fn configure_cmake<P: AsRef<std::path::Path>>(compile_path: P) -> Result<Child> {
-    let res = Command::new("cmake")
-        .current_dir(&compile_path)
-        .arg("-Dbuild_tests=ON")
-        .arg("..")
-        .output()
-        .unwrap();
-    println!("res:{:?}", std::str::from_utf8(&res.stderr));
     Command::new("cmake")
         .current_dir(compile_path)
         .arg("-Denable_cplusplus=ON")

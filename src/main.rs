@@ -15,6 +15,14 @@ static GC_CONFIG_MACROS: &[u8] = include_bytes!(concat!(
     env!("OUT_DIR"),
     "/bdwgc/include/gc/gc_config_macros.h"
 ));
+static GC_SO: &[u8] = include_bytes!(concat!(
+    env!("OUT_DIR"),
+    "/bdwgc/out/libgc.so"
+));
+static GCCPP_SO: &[u8] = include_bytes!(concat!(
+    env!("OUT_DIR"),
+    "/bdwgc/out/libgccpp.so"
+));
 use crate::fatops::ClassInfo;
 use crate::fatops::FatOp;
 use crate::importer::{BytecodeImportError, ImportedJavaClass};
@@ -271,6 +279,8 @@ impl CompilationContext {
         write_cpp_file!(GC_HEADER, target_path, "gc.h");
         write_cpp_file!(GC_VERSION_HEADER, target_path, "gc_version.h");
         write_cpp_file!(GC_CONFIG_MACROS, target_path, "gc_config_macros.h");
+        write_cpp_file!(GC_SO, target_path, "libgc.so");
+        write_cpp_file!(GCCPP_SO, target_path, "libgccpp.so");
         Ok(())
     }
     fn new(ca: &ConvertionArgs) -> Result<Self, BytecodeImportError> {
