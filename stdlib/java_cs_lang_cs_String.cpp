@@ -9,10 +9,12 @@ java::lang::String::String(const char16_t* buffer,size_t length){
     }
     this->data = std::u16string();
     this->data.resize(length);
-    memcpy(this->data.data(),buffer,length*sizeof(char16_t));
-    if (addNull)this->data.data()[length - 1] = 0;
+    for(int i = 0; i < (int)length; i++){
+        this->data[i] = buffer[i];
+    }
+    if (addNull)this->data[length - 1] = 0;
 }
-char16_t* java::lang::String::GetBuffer(){return this->data.data();}
+const char16_t* java::lang::String::GetBuffer(){return this->data.data();}
 java::lang::String::String(const char16_t* null_terminated_buffer){
     unsigned int length = 0;
     const char16_t* curr = null_terminated_buffer;
@@ -22,7 +24,9 @@ java::lang::String::String(const char16_t* null_terminated_buffer){
     }
     this->data = std::u16string();
     this->data.resize(length);
-    memcpy(this->data.data(),null_terminated_buffer,length*sizeof(char16_t));
+    for(int i = 0; i < (int)length; i++){
+        this->data[i] = null_terminated_buffer[i];
+    }
 }
 #include <stdexcept>
 java::lang::String::String(std::u16string data){this->data = data;}

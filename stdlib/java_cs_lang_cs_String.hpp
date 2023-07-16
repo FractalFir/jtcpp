@@ -5,7 +5,7 @@ namespace java{namespace lang{class String;};};
 class java::lang::String : public java::lang::Object{
     std::u16string data;
     public:
-    char16_t* GetBuffer();
+    const char16_t* GetBuffer();
     size_t GetBufferLength();
     String(const char16_t* buffer,size_t length);
     String(const char16_t* null_terminated_buffer);

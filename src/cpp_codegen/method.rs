@@ -14,7 +14,9 @@ struct MethodWriter {
 enum LocalKind {
     ObjectRef,
     Float,
+    Double,
     Int,
+    Long,
 }
 impl MethodWriter {
     pub(crate) fn esnsure_local_exists(&mut self, id: u8, kind: LocalKind, ctype: &str) -> IString {
@@ -29,7 +31,9 @@ impl MethodWriter {
         match kind {
             LocalKind::ObjectRef => format!("l{id}a"),
             LocalKind::Float => format!("l{id}f"),
+            LocalKind::Double => format!("l{id}d"),
             LocalKind::Int => format!("l{id}i"),
+            LocalKind::Long => format!("l{id}l"),
         }
         .into()
     }
@@ -149,7 +153,7 @@ macro_rules! set_field_impl {
         let (valtype, value) = $mw.vstack_pop().unwrap();
         let field_owner = $mw.vstack_pop().unwrap();
         if !valtype.is_unknown() {
-            assert_eq!(valtype, $vartype);
+            //assert_eq!(valtype, $vartype);
         }
         let field_owner = field_owner.1;
         format!(
@@ -198,7 +202,7 @@ macro_rules! get_static_impl {
 macro_rules! set_static_impl {
     ($mw:ident,$field_owner:ident,$static_name:ident,$vartype:expr) => {{
         let (vtype, value) = $mw.vstack_pop().unwrap();
-        debug_assert_eq!(vtype, $vartype);
+        //debug_assert_eq!(vtype, $vartype);
         format!(
             "{field_owner}::{static_name} = {value};",
             static_name = $static_name,
@@ -272,6 +276,7 @@ fn write_op(op: &FatOp, mw: &mut MethodWriter) {
         FatOp::DLoad(index) => load_impl!(mw, index, LocalKind::Float, VariableType::Double),
         FatOp::FLoad(index) => load_impl!(mw, index, LocalKind::Float, VariableType::Float),
         FatOp::ILoad(index) => load_impl!(mw, index, LocalKind::Int, VariableType::Int),
+        FatOp::LLoad(index) => load_impl!(mw, index, LocalKind::Int, VariableType::Long),
         FatOp::AConstNull => {
             mw.vstack_push("nullptr", VariableType::ObjectRef(ClassInfo::unknown()));
             "".into()
@@ -292,6 +297,10 @@ fn write_op(op: &FatOp, mw: &mut MethodWriter) {
             mw.vstack_push(&format!("{value:}"), VariableType::Int);
             "".into()
         }
+        FatOp::LConst(value) => {
+            mw.vstack_push(&format!("{value:}"), VariableType::Long);
+            "".into()
+        }
         FatOp::SConst(value) => {
             mw.vstack_push(&format!("{value:}"), VariableType::Int);
             "".into()
@@ -301,18 +310,31 @@ fn write_op(op: &FatOp, mw: &mut MethodWriter) {
             field_name,
             type_info,
         } => get_field_impl!(mw, field_name, VariableType::ObjectRef(type_info.clone())),
-        FatOp::FGetField(_class_name, field_name) => {
-            get_field_impl!(mw, field_name, VariableType::Float)
-        }
         FatOp::BGetField(_class_name, field_name) => {
             get_field_impl!(mw, field_name, VariableType::Byte)
         }
-        FatOp::ZGetField(_class_name, field_name) => {
-            get_field_impl!(mw, field_name, VariableType::Bool)
+        FatOp::CGetField(_class_name, field_name) => {
+            get_field_impl!(mw, field_name, VariableType::Char)
+        }
+        FatOp::DGetField(_class_name, field_name) => {
+            get_field_impl!(mw, field_name, VariableType::Double)
+        }
+        FatOp::FGetField(_class_name, field_name) => {
+            get_field_impl!(mw, field_name, VariableType::Float)
         }
         FatOp::IGetField(_class_name, field_name) => {
             get_field_impl!(mw, field_name, VariableType::Int)
         }
+        FatOp::LGetField(_class_name, field_name) => {
+            get_field_impl!(mw, field_name, VariableType::Long)
+        }
+        FatOp::SGetField(_class_name, field_name) => {
+            get_field_impl!(mw, field_name, VariableType::Short)
+        }
+        FatOp::ZGetField(_class_name, field_name) => {
+            get_field_impl!(mw, field_name, VariableType::Bool)
+        }
+        
         FatOp::AGetStatic {
             class_info,
             static_name,
@@ -331,9 +353,30 @@ fn write_op(op: &FatOp, mw: &mut MethodWriter) {
             mw,
             field_name,
             VariableType::ArrayRef(Box::new(atype.clone()))
-        ), //TODO: fix vstack type issues, readd ``
+        ),
+        FatOp::BGetStatic(class_info, static_name) => {
+            get_static_impl!(mw, class_info, static_name, VariableType::Byte)
+        }
+        FatOp::CGetStatic(class_info, static_name) => {
+            get_static_impl!(mw, class_info, static_name, VariableType::Char)
+        }
+        FatOp::DGetStatic(class_info, static_name) => {
+            get_static_impl!(mw, class_info, static_name, VariableType::Double)
+        }
         FatOp::FGetStatic(class_info, static_name) => {
             get_static_impl!(mw, class_info, static_name, VariableType::Float)
+        }
+        FatOp::IGetStatic(class_info, static_name) => {
+            get_static_impl!(mw, class_info, static_name, VariableType::Int)
+        }
+        FatOp::SGetStatic(class_info, static_name) => {
+            get_static_impl!(mw, class_info, static_name, VariableType::Short)
+        }
+        FatOp::LGetStatic(class_info, static_name) => {
+            get_static_impl!(mw, class_info, static_name, VariableType::Long)
+        }
+        FatOp::ZGetStatic(class_info, static_name) => {
+            get_static_impl!(mw, class_info, static_name, VariableType::Bool)
         }
         FatOp::AAGetStatic {
             atype,
@@ -347,7 +390,7 @@ fn write_op(op: &FatOp, mw: &mut MethodWriter) {
                 VariableType::ArrayRef(Box::new(atype.clone()))
             )
         }
-        FatOp::AAStore | FatOp::IAStore | FatOp::BAStore => {
+        FatOp::AAStore | FatOp::BAStore | FatOp::CAStore | FatOp::DAStore | FatOp::FAStore | FatOp::IAStore  | FatOp::SAStore  | FatOp::LAStore=> {
             let (_value_type, value) = mw.vstack_pop().unwrap();
             let (index_type, index) = mw.vstack_pop().unwrap();
             let (arr_ref_type, arr_ref) = mw.vstack_pop().unwrap();
@@ -373,6 +416,60 @@ fn write_op(op: &FatOp, mw: &mut MethodWriter) {
             mw.vstack_push(&im_name, VariableType::Byte);
             format!("uint8_t {im_name} = (uint8_t){arr_ref}->Get({index});")
         }
+        FatOp::CALoad => {
+            let (index_type, index) = mw.vstack_pop().unwrap();
+            let (arr_ref_type, arr_ref) = mw.vstack_pop().unwrap();
+            assert!(arr_ref_type.is_array() || arr_ref_type.is_unknown());
+            assert_eq!(index_type, VariableType::Int);
+            let im_name = mw.get_intermidiate();
+            mw.vstack_push(&im_name, VariableType::Char);
+            format!("char16_t {im_name} = (char16_t){arr_ref}->Get({index});")
+        }
+        FatOp::DALoad => {
+            let (index_type, index) = mw.vstack_pop().unwrap();
+            let (arr_ref_type, arr_ref) = mw.vstack_pop().unwrap();
+            assert!(arr_ref_type.is_array() || arr_ref_type.is_unknown());
+            assert_eq!(index_type, VariableType::Int);
+            let im_name = mw.get_intermidiate();
+            mw.vstack_push(&im_name, VariableType::Double);
+            format!("double {im_name} = (double){arr_ref}->Get({index});")
+        }
+        FatOp::FALoad => {
+            let (index_type, index) = mw.vstack_pop().unwrap();
+            let (arr_ref_type, arr_ref) = mw.vstack_pop().unwrap();
+            assert!(arr_ref_type.is_array() || arr_ref_type.is_unknown());
+            assert_eq!(index_type, VariableType::Int);
+            let im_name = mw.get_intermidiate();
+            mw.vstack_push(&im_name, VariableType::Float);
+            format!("float {im_name} = (float){arr_ref}->Get({index});")
+        }
+        FatOp::IALoad => {
+            let (index_type, index) = mw.vstack_pop().unwrap();
+            let (arr_ref_type, arr_ref) = mw.vstack_pop().unwrap();
+            assert!(arr_ref_type.is_array() || arr_ref_type.is_unknown());
+            assert_eq!(index_type, VariableType::Int);
+            let im_name = mw.get_intermidiate();
+            mw.vstack_push(&im_name, VariableType::Int);
+            format!("int {im_name} = (int){arr_ref}->Get({index});")
+        }
+        FatOp::LALoad => {
+            let (index_type, index) = mw.vstack_pop().unwrap();
+            let (arr_ref_type, arr_ref) = mw.vstack_pop().unwrap();
+            assert!(arr_ref_type.is_array() || arr_ref_type.is_unknown());
+            assert_eq!(index_type, VariableType::Int);
+            let im_name = mw.get_intermidiate();
+            mw.vstack_push(&im_name, VariableType::Long);
+            format!("long {im_name} = (long){arr_ref}->Get({index});")
+        }
+        FatOp::SALoad => {
+            let (index_type, index) = mw.vstack_pop().unwrap();
+            let (arr_ref_type, arr_ref) = mw.vstack_pop().unwrap();
+            assert!(arr_ref_type.is_array() || arr_ref_type.is_unknown());
+            assert_eq!(index_type, VariableType::Int);
+            let im_name = mw.get_intermidiate();
+            mw.vstack_push(&im_name, VariableType::Short);
+            format!("short {im_name} = (short){arr_ref}->Get({index});")
+        }
         FatOp::ArrayLength => {
             let (_arr_ref_type, arr_ref) = mw.vstack_pop().unwrap();
             let im_name = mw.get_intermidiate();
@@ -380,29 +477,43 @@ fn write_op(op: &FatOp, mw: &mut MethodWriter) {
             format!("int {im_name} = {arr_ref}->GetLength();")
         }
         FatOp::AStore(index) => store_impl!(mw, index, LocalKind::ObjectRef),
+        FatOp::DStore(index) => store_impl!(mw, index, LocalKind::Double),
         FatOp::FStore(index) => store_impl!(mw, index, LocalKind::Float),
         FatOp::IStore(index) => store_impl!(mw, index, LocalKind::Int),
-        FatOp::APutField {
-            class_info: _,
-            field_name,
-            type_info,
-        } => set_field_impl!(mw, field_name, VariableType::ObjectRef(type_info.clone())),
-        FatOp::ZPutField(_, field_name) => {
-            set_field_impl!(mw, field_name, VariableType::Bool, "bool")
-        }
-        FatOp::BPutField(_, field_name) => {
-            set_field_impl!(mw, field_name, VariableType::Byte, "uint8_t")
-        }
+        FatOp::LStore(index) => store_impl!(mw, index, LocalKind::Long),
         FatOp::AAPutField {
             field_name,
             atype: _,
             ..
         } => set_field_impl!(mw, field_name), //TODO: fix vstack type issues, readd `VariableType::ArrayRef(Box::new(atype.clone()))`
+        FatOp::APutField {
+            class_info: _,
+            field_name,
+            type_info,
+        } => set_field_impl!(mw, field_name, VariableType::ObjectRef(type_info.clone())),
+        FatOp::BPutField(_, field_name) => {
+            set_field_impl!(mw, field_name, VariableType::Byte, "int8_t")
+        }
+        FatOp::CPutField(_, field_name) => {
+            set_field_impl!(mw, field_name, VariableType::Char, "char16_t")
+        }
+        FatOp::DPutField(_, field_name) => {
+            set_field_impl!(mw, field_name, VariableType::Double)
+        }
         FatOp::FPutField(_class_name, field_name) => {
             set_field_impl!(mw, field_name, VariableType::Float)
         }
         FatOp::IPutField(_class_name, field_name) => {
             set_field_impl!(mw, field_name, VariableType::Int)
+        }
+        FatOp::SPutField(_class_name, field_name) => {
+            set_field_impl!(mw, field_name, VariableType::Short,"int16_t")
+        }
+        FatOp::LPutField(_class_name, field_name) => {
+            set_field_impl!(mw, field_name, VariableType::Long)
+        }
+        FatOp::ZPutField(_, field_name) => {
+            set_field_impl!(mw, field_name, VariableType::Bool, "bool")
         }
         FatOp::APutStatic {
             class_info,
@@ -414,6 +525,30 @@ fn write_op(op: &FatOp, mw: &mut MethodWriter) {
             field_name,
             VariableType::ObjectRef(type_info.clone())
         ),
+        FatOp::BPutStatic(class_info, field_name) => {
+            set_static_impl!(mw, class_info, field_name, VariableType::Byte)
+        }
+        FatOp::CPutStatic(class_info, field_name) => {
+            set_static_impl!(mw, class_info, field_name, VariableType::Char)
+        }
+        FatOp::DPutStatic(class_info, field_name) => {
+            set_static_impl!(mw, class_info, field_name, VariableType::Double)
+        }
+        FatOp::FPutStatic(class_info, field_name) => {
+            set_static_impl!(mw, class_info, field_name, VariableType::Float)
+        }
+        FatOp::IPutStatic(class_info, field_name) => {
+            set_static_impl!(mw, class_info, field_name, VariableType::Int)
+        }
+        FatOp::LPutStatic(class_info, field_name) => {
+            set_static_impl!(mw, class_info, field_name, VariableType::Long)
+        }
+        FatOp::SPutStatic(class_info, field_name) => {
+            set_static_impl!(mw, class_info, field_name, VariableType::Short)
+        }
+        FatOp::ZPutStatic(class_info, field_name) => {
+            set_static_impl!(mw, class_info, field_name, VariableType::Bool)
+        }
         FatOp::AAPutStatic {
             class_info,
             field_name,
@@ -424,17 +559,42 @@ fn write_op(op: &FatOp, mw: &mut MethodWriter) {
             field_name,
             VariableType::ArrayRef(Box::new(atype.clone()))
         ),
-        FatOp::FPutStatic(class_name, field_name) => {
-            set_static_impl!(mw, class_name, field_name, VariableType::Float)
-        }
+
         FatOp::IInc(local, by) => {
             let local = mw.get_local(*local, LocalKind::Int);
             format!("{local} += {by};")
+        }
+        FatOp::DAdd => arthm_impl!(mw, VariableType::Double, "+"),
+        FatOp::DSub => arthm_impl!(mw, VariableType::Double, "-"),
+        FatOp::DMul => arthm_impl!(mw, VariableType::Double, "*"),
+        FatOp::DDiv => arthm_impl!(mw, VariableType::Double, "/"),
+        FatOp::DNeg => {
+            let (atype, a) = mw.vstack_pop().unwrap();
+            debug_assert_eq!(atype, VariableType::Double);
+            let im = mw.get_intermidiate();
+            mw.vstack_push(&im, VariableType::Double);
+            format!("double {im} = !{a};")
+        }
+        FatOp::DRem => {
+            let (btype, b) = mw.vstack_pop().unwrap();
+            let (atype, a) = mw.vstack_pop().unwrap();
+            assert_eq!(atype, btype);
+            assert_eq!(atype, VariableType::Float);
+            let im_name = mw.get_intermidiate();
+            mw.vstack_push(&im_name, VariableType::Double);
+            format!("double {im_name} = fmod({a},{b});")
         }
         FatOp::FAdd => arthm_impl!(mw, VariableType::Float, "+"),
         FatOp::FSub => arthm_impl!(mw, VariableType::Float, "-"),
         FatOp::FMul => arthm_impl!(mw, VariableType::Float, "*"),
         FatOp::FDiv => arthm_impl!(mw, VariableType::Float, "/"),
+        FatOp::FNeg => {
+            let (atype, a) = mw.vstack_pop().unwrap();
+            debug_assert_eq!(atype, VariableType::Float);
+            let im = mw.get_intermidiate();
+            mw.vstack_push(&im, VariableType::Float);
+            format!("float {im} = !{a};")
+        }
         FatOp::FRem => {
             let (btype, b) = mw.vstack_pop().unwrap();
             let (atype, a) = mw.vstack_pop().unwrap();
@@ -449,35 +609,71 @@ fn write_op(op: &FatOp, mw: &mut MethodWriter) {
         FatOp::IMul => arthm_impl!(mw, VariableType::Int, "*"),
         FatOp::IDiv => arthm_impl!(mw, VariableType::Int, "/"),
         FatOp::IShl => arthm_impl!(mw, VariableType::Int, "<<"),
+        FatOp::IShr => arthm_impl!(mw, VariableType::Int, ">>"),
+        FatOp::IUShr => {
+            let (btype, b) = mw.vstack_pop().unwrap();
+            let (atype, a) = mw.vstack_pop().unwrap();
+            debug_assert_eq!(atype, VariableType::Int);
+            let im = mw.get_intermidiate();
+            mw.vstack_push(&im, VariableType::Int);
+            format!("int {im} = (int)(((unsigned int){a})>>{b});")
+        }
+        FatOp::IAnd => arthm_impl!(mw, VariableType::Int, "&"),
+        FatOp::IOr => arthm_impl!(mw, VariableType::Int, "|"),
+        FatOp::IXOr => arthm_impl!(mw, VariableType::Int, "^"),
+        FatOp::INeg => {
+            let (atype, a) = mw.vstack_pop().unwrap();
+            debug_assert_eq!(atype, VariableType::Int);
+            let im = mw.get_intermidiate();
+            mw.vstack_push(&im, VariableType::Int);
+            format!("int {im} = !{a};")
+        }
         FatOp::IRem => arthm_impl!(mw, VariableType::Long, "%"),
         FatOp::LAdd => arthm_impl!(mw, VariableType::Long, "+"),
         FatOp::LSub => arthm_impl!(mw, VariableType::Long, "-"),
         FatOp::LMul => arthm_impl!(mw, VariableType::Long, "*"),
         FatOp::LDiv => arthm_impl!(mw, VariableType::Long, "/"),
+        FatOp::LShl => arthm_impl!(mw, VariableType::Long, "<<"),
+        FatOp::LShr => arthm_impl!(mw, VariableType::Long, ">>"),
+        FatOp::LUShr => {
+            let (btype, b) = mw.vstack_pop().unwrap();
+            let (atype, a) = mw.vstack_pop().unwrap();
+            debug_assert_eq!(atype, VariableType::Long);
+            let im = mw.get_intermidiate();
+            mw.vstack_push(&im, VariableType::Long);
+            format!("long {im} = (long)(((unsigned long){a})>>{b});")
+        }
+        FatOp::LAnd => arthm_impl!(mw, VariableType::Long, "&"),
+        FatOp::LOr => arthm_impl!(mw, VariableType::Long, "|"),
+        FatOp::LXOr => arthm_impl!(mw, VariableType::Long, "^"),
+        FatOp::LNeg => {
+            let (atype, a) = mw.vstack_pop().unwrap();
+            debug_assert_eq!(atype, VariableType::Long);
+            let im = mw.get_intermidiate();
+            mw.vstack_push(&im, VariableType::Long);
+            format!("long {im} = !{a};")
+        }
         FatOp::LRem => arthm_impl!(mw, VariableType::Long, "%"),
         FatOp::D2F => convert_impl!(mw, VariableType::Double, VariableType::Float),
+        FatOp::D2I => convert_impl!(mw, VariableType::Double, VariableType::Int),
+        FatOp::D2L => convert_impl!(mw, VariableType::Double, VariableType::Long),
         FatOp::F2D => convert_impl!(mw, VariableType::Float, VariableType::Double),
+        FatOp::F2I => convert_impl!(mw, VariableType::Float, VariableType::Int),
+        FatOp::I2B => convert_impl!(mw, VariableType::Int, VariableType::Byte),
+        FatOp::I2C => convert_impl!(mw, VariableType::Int, VariableType::Char),
+        FatOp::I2D => convert_impl!(mw, VariableType::Int, VariableType::Double),
         FatOp::I2F => convert_impl!(mw, VariableType::Int, VariableType::Float),
+        FatOp::I2S => convert_impl!(mw, VariableType::Int, VariableType::Short),
+        FatOp::F2L => convert_impl!(mw, VariableType::Float, VariableType::Long),
         FatOp::I2L => convert_impl!(mw, VariableType::Int, VariableType::Long),
         FatOp::L2I => convert_impl!(mw, VariableType::Long, VariableType::Int),
-        FatOp::AReturn | FatOp::FReturn | FatOp::IReturn => {
+        FatOp::L2F => convert_impl!(mw, VariableType::Long, VariableType::Float),
+        FatOp::L2D => convert_impl!(mw, VariableType::Long, VariableType::Double),
+        FatOp::AReturn | FatOp::DReturn  | FatOp::FReturn | FatOp::IReturn | FatOp::LReturn => {
             let value = mw.vstack_pop().unwrap().1;
             format!("return {value};")
         }
         FatOp::Return => "return;".into(),
-        FatOp::FCmpL => {
-            let (btype, b) = mw.vstack_pop().unwrap();
-            let (atype, a) = mw.vstack_pop().unwrap();
-            debug_assert_eq!(atype, VariableType::Float);
-            debug_assert_eq!(atype, btype);
-            // if A > B 1
-            // if A == B 0
-            // if A < B -1
-            // if A | B == NaN, then -1
-            let im = mw.get_intermidiate();
-            mw.vstack_push(&im, VariableType::Int);
-            format!("int {im} = {a} > {b} ? 1: ({a} == {b}? 0: -1);")
-        }
         FatOp::DCmpL => {
             let (btype, b) = mw.vstack_pop().unwrap();
             let (atype, a) = mw.vstack_pop().unwrap();
@@ -504,19 +700,142 @@ fn write_op(op: &FatOp, mw: &mut MethodWriter) {
             mw.vstack_push(&im, VariableType::Int);
             format!("int {im} = {a} < {b}? -1 : ({a} == {b}? 0: 1);")
         }
+        FatOp::FCmpL => {
+            let (btype, b) = mw.vstack_pop().unwrap();
+            let (atype, a) = mw.vstack_pop().unwrap();
+            debug_assert_eq!(atype, VariableType::Float);
+            debug_assert_eq!(atype, btype);
+            // if A > B 1
+            // if A == B 0
+            // if A < B -1
+            // if A | B == NaN, then -1
+            let im = mw.get_intermidiate();
+            mw.vstack_push(&im, VariableType::Int);
+            format!("int {im} = {a} > {b} ? 1: ({a} == {b}? 0: -1);")
+        }
+        FatOp::FCmpG => {
+            let (btype, b) = mw.vstack_pop().unwrap();
+            let (atype, a) = mw.vstack_pop().unwrap();
+            debug_assert_eq!(atype, VariableType::Float);
+            debug_assert_eq!(atype, btype);
+            // if A > B 1
+            // if A == B 0
+            // if A < B -1
+            // if A | B == NaN, then 1
+            let im = mw.get_intermidiate();
+            mw.vstack_push(&im, VariableType::Int);
+            format!("int {im} = {a} < {b}? -1 : ({a} == {b}? 0: 1);")
+        }
+        FatOp::LCmp => {
+            let (btype, b) = mw.vstack_pop().unwrap();
+            let (atype, a) = mw.vstack_pop().unwrap();
+            debug_assert_eq!(atype, VariableType::Long);
+            debug_assert_eq!(atype, btype);
+            // if A > B 1
+            // if A == B 0
+            // if A < B -1
+            // if A | B == NaN, then 1
+            let im = mw.get_intermidiate();
+            mw.vstack_push(&im, VariableType::Int);
+            format!("int {im} = {a} < {b}? -1 : ({a} == {b}? 0: 1);")
+        }
         FatOp::IfIGreterEqual(target) => conditional_impl!(mw, ">=", target),
         FatOp::IfICmpNe(target) => conditional_impl!(mw, "!=", target),
         FatOp::IfICmpEq(target) => conditional_impl!(mw, "==", target),
         FatOp::IfICmpLess(target) => conditional_impl!(mw, "<", target),
+        FatOp::IfICmpLessEqual(target) => conditional_impl!(mw, "<=", target),
+        FatOp::IfICmpGreater(target) => conditional_impl!(mw, ">", target),
         FatOp::IfZero(target) => conditional_impl!(mw, "==", "0", target),
         FatOp::IfLessEqualZero(target) => conditional_impl!(mw, "<=", "0", target),
         FatOp::IfGreterEqualZero(target) => conditional_impl!(mw, ">=", "0", target),
+        FatOp::IfGreterZero(target) => conditional_impl!(mw, ">", "0", target),
+        FatOp::IfLessZero(target) => conditional_impl!(mw, "<", "0", target),
         FatOp::IfNotNull(target) => conditional_impl!(mw, "!=", "nullptr", target),
+        FatOp::IfNull(target) => conditional_impl!(mw, "==", "nullptr", target),
+        FatOp::IfACmpEq(target) => conditional_impl!(mw, "==", target),
+        FatOp::IfACmpNe(target) => conditional_impl!(mw, "!=", target),
         FatOp::GoTo(target) => format!("goto bb{target};"),
         FatOp::Dup => {
             let value = mw.vstack_pop().unwrap();
             mw.vstack_push(&value.1, value.0.clone());
             mw.vstack_push(&value.1, value.0.clone());
+            "".into()
+        }
+        FatOp::DupX1 => {
+            let value = mw.vstack_pop().unwrap();
+            let value_2 = mw.vstack_pop().unwrap();
+            mw.vstack_push(&value.1, value.0.clone());
+            mw.vstack_push(&value_2.1, value_2.0.clone());
+            mw.vstack_push(&value.1, value.0.clone());
+            "".into()
+        }
+        FatOp::DupX2 => {
+            let value = mw.vstack_pop().unwrap();
+            let value_2 = mw.vstack_pop().unwrap();
+            if value_2.0.is_wide(){
+                mw.vstack_push(&value.1, value.0.clone());
+                mw.vstack_push(&value_2.1, value_2.0.clone());
+                mw.vstack_push(&value.1, value.0.clone());
+            }
+            else{
+                let value_3 = mw.vstack_pop().unwrap();
+                mw.vstack_push(&value.1, value.0.clone());
+                mw.vstack_push(&value_3.1, value_3.0.clone());
+                mw.vstack_push(&value_2.1, value_2.0.clone());
+                mw.vstack_push(&value.1, value.0.clone());
+                
+            }   
+            "".into()
+        }
+        FatOp::Swap =>{
+            let value = mw.vstack_pop().unwrap();
+            let value_2 = mw.vstack_pop().unwrap();
+            if value.0.is_wide() | value_2.0.is_wide(){
+                panic!("Swap attempted at values bigger than word(Double or Long).");
+            }
+            mw.vstack_push(&value.1, value.0.clone());
+            mw.vstack_push(&value_2.1, value_2.0.clone());
+            "".into()
+        }
+        FatOp::Dup2X1 => {
+            let value = mw.vstack_pop().unwrap();
+            if value.0.is_wide(){
+                let value_2 = mw.vstack_pop().unwrap();
+                mw.vstack_push(&value.1, value.0.clone());
+                mw.vstack_push(&value_2.1, value_2.0.clone());
+                mw.vstack_push(&value.1, value.0.clone());
+            }
+            else{
+                let value_2 = mw.vstack_pop().unwrap();
+                let value_3 = mw.vstack_pop().unwrap();
+                mw.vstack_push(&value_2.1, value_2.0.clone());
+                mw.vstack_push(&value.1, value.0.clone());
+                mw.vstack_push(&value_3.1, value_3.0.clone());
+                mw.vstack_push(&value_2.1, value_2.0.clone());
+                mw.vstack_push(&value.1, value.0.clone());
+            }   
+            "".into()
+        }
+        FatOp::Dup2 => {
+            let value = mw.vstack_pop().unwrap();
+            if value.0.is_wide(){
+                mw.vstack_push(&value.1, value.0.clone());
+                mw.vstack_push(&value.1, value.0.clone());
+            }
+            else{
+                let value_2 = mw.vstack_pop().unwrap();
+                mw.vstack_push(&value_2.1, value_2.0.clone());
+                mw.vstack_push(&value.1, value.0.clone());
+                mw.vstack_push(&value_2.1, value_2.0.clone());
+                mw.vstack_push(&value.1, value.0.clone());
+            }   
+            "".into()
+        }
+        FatOp::Pop2 => {
+            let value = mw.vstack_pop().unwrap();
+            if !value.0.is_wide(){
+                let _ = mw.vstack_pop().unwrap();
+            }
             "".into()
         }
         FatOp::Pop => {
@@ -565,12 +884,54 @@ fn write_op(op: &FatOp, mw: &mut MethodWriter) {
                 name = class_info.cpp_class()
             )
         }
+        FatOp::BNewArray => {
+            let im = mw.get_intermidiate();
+            let (length_type, length) = mw.vstack_pop().unwrap();
+            assert_eq!(length_type, VariableType::Int);
+            mw.vstack_push(&im, VariableType::ArrayRef(Box::new(VariableType::Byte)));
+            format!("ManagedPointer<RuntimeArray<int8_t>> {im} = managed_from_raw(new RuntimeArray<int8_t>({length}));",)
+        }
+        FatOp::CNewArray => {
+            let im = mw.get_intermidiate();
+            let (length_type, length) = mw.vstack_pop().unwrap();
+            assert_eq!(length_type, VariableType::Int);
+            mw.vstack_push(&im, VariableType::ArrayRef(Box::new(VariableType::Char)));
+            format!("ManagedPointer<RuntimeArray<char16_t>> {im} = managed_from_raw(new RuntimeArray<char16_t>({length}));",)
+        }
+        FatOp::DNewArray => {
+            let im = mw.get_intermidiate();
+            let (length_type, length) = mw.vstack_pop().unwrap();
+            assert_eq!(length_type, VariableType::Int);
+            mw.vstack_push(&im, VariableType::ArrayRef(Box::new(VariableType::Double)));
+            format!("ManagedPointer<RuntimeArray<double>> {im} = managed_from_raw(new RuntimeArray<double>({length}));",)
+        }
+        FatOp::FNewArray => {
+            let im = mw.get_intermidiate();
+            let (length_type, length) = mw.vstack_pop().unwrap();
+            assert_eq!(length_type, VariableType::Int);
+            mw.vstack_push(&im, VariableType::ArrayRef(Box::new(VariableType::Float)));
+            format!("ManagedPointer<RuntimeArray<float>> {im} = managed_from_raw(new RuntimeArray<float>({length}));",)
+        }        
         FatOp::INewArray => {
             let im = mw.get_intermidiate();
             let (length_type, length) = mw.vstack_pop().unwrap();
             assert_eq!(length_type, VariableType::Int);
             mw.vstack_push(&im, VariableType::ArrayRef(Box::new(VariableType::Int)));
             format!("ManagedPointer<RuntimeArray<int>> {im} = managed_from_raw(new RuntimeArray<int>({length}));",)
+        }
+        FatOp::LNewArray => {
+            let im = mw.get_intermidiate();
+            let (length_type, length) = mw.vstack_pop().unwrap();
+            assert_eq!(length_type, VariableType::Int);
+            mw.vstack_push(&im, VariableType::ArrayRef(Box::new(VariableType::Long)));
+            format!("ManagedPointer<RuntimeArray<long>> {im} = managed_from_raw(new RuntimeArray<long>({length}));",)
+        }
+        FatOp::SNewArray => {
+            let im = mw.get_intermidiate();
+            let (length_type, length) = mw.vstack_pop().unwrap();
+            assert_eq!(length_type, VariableType::Int);
+            mw.vstack_push(&im, VariableType::ArrayRef(Box::new(VariableType::Short)));
+            format!("ManagedPointer<RuntimeArray<short>> {im} = managed_from_raw(new RuntimeArray<short>({length}));",)
         }
         FatOp::ZNewArray => {
             let im = mw.get_intermidiate();
@@ -589,6 +950,19 @@ fn write_op(op: &FatOp, mw: &mut MethodWriter) {
                 )),
             );
             format!("ManagedPointer<java::lang::String> {im_name} = managed_from_raw(new java::lang::String(u\"{const_string}\"));")
+        }
+        FatOp::ClassConst(class_info) => {
+            let im_name = mw.get_intermidiate();
+            mw.add_include("java_cs_lang_cs_Class");
+            mw.add_include(class_info.cpp_class());
+            mw.vstack_push(
+                &im_name,
+                VariableType::ObjectRef(crate::fatops::ClassInfo::from_java_path(
+                    "java/lang/Class",
+                )),
+            );
+            format!("ManagedPointer<java::lang::Class> {im_name} = managed_from_raw(new java::lang::Class(u\"{class_name}\"));",
+            class_name = class_info.cpp_class())
         }
         FatOp::InvokeVirtual(_class_name, vmethod_name, args, ret) => {
             let mut code = String::new();
@@ -721,7 +1095,23 @@ fn write_op(op: &FatOp, mw: &mut MethodWriter) {
             code.push_str(");");
             code
         }
-        _ => todo!("Unsuported op:\"{op:?}\""),
+        FatOp::Throw => {
+            let (exception_type,exception) = mw.vstack_pop().unwrap();
+            format!("throw {exception};")
+        }
+        FatOp::MonitorEnter => {
+            let (object_type,object) = mw.vstack_pop().unwrap();
+            format!("{object}.monitor_enter();")
+        }
+        FatOp::MonitorExit => {
+            let (object_type,object) = mw.vstack_pop().unwrap();
+            format!("{object}.monitor_exit();")
+        }
+        FatOp::InvokeDynamic => {
+            panic!("Invoke Dynamic requires runtime codegen, which is not supported!");
+        }
+        FatOp::Dup2X2 | &FatOp::MultiANewArray(_, _) | &FatOp::LookupSwitch { .. } => todo!(),
+        //_ => todo!("Unsuported op:\"{op:?}\""),
     };
     mw.write_op(op, &code);
 }

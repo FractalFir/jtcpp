@@ -4,6 +4,7 @@
 namespace java{namespace io{class PrintStream;};};
 class java::io::PrintStream:public java::io::FilterOutputStream{
     public:
+        virtual ~PrintStream();
         PrintStream(OutuptStreamWrapper* out_stream);
 
         virtual void print_java_cs_lang_cs_String__V(ManagedPointer<java::lang::String> string);

@@ -16,8 +16,9 @@ void OutuptStreamWrapper::write(uint8_t* buffer, size_t length){
         assert(this->buff_offset < BUFFER_CAP);
     }
     else{
+        
         while(length > 0){
-            size_t curr_length = min(curr_length,BUFFER_CAP);
+            size_t curr_length = min(length,BUFFER_CAP);
             this->write(buffer,curr_length);
             buffer += curr_length;
             length -= curr_length;

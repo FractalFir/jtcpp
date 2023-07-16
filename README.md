@@ -1,17 +1,26 @@
-# jtcpp - experimental JVM bytecode to C++ converter
-## Why was `jtcpp` created?
-One of my favourite parts of programming is solving very hard problems. Engineering a solution to a problem, which seems impossible at first, helps to become confident in ones own skills, and to broader horizons. Seeing popularity of JVM-oriented languages, I wanted to learn a little bit more about the inner workings of the virtual machine powering some of the most popular languages out there. So my joinery for a problem that *definetly* needed solving began.
+# What is `jtcpp`
+`jtcpp` is a versatile, highly experimental JVM bytecode to C++ converter. It generates C++ code which an exact, JVM op into C++ statement, translation of the input bytecode. This approach has some limitations, which may reduce performance of generated C++ code. This makes general comparisons between speed original Java code and translated C++ very hard, because it varies so much(From 3x speedup to 50x slowdown).
+# Compatibility.
+Building `jtcpp` is supported only on Linux. `make`,`cmake`,`git` and either `g++` or `clang` is required.
+Translated `C++` code should work with almost any compiler. It was tested with both `g++` and `clang`, and minimal supported C++ version is C++ 11. 
+# Highly versatile GC
+`jtcpp` supports 4 different GC modes: No GC, Bohem GC, Reference counting, Mixed-mode GC(experimental, combines reference counting and Bohem GC)
+# How to use `jtcpp`
+1. Download `jtcpp` and build it.
+2. Pick a target directory.
+3. Run this command for each file you want to be translated(besides `.class` files, `jtcpp` also supports translating whole `.jar` files in one go)
+`jtcpp MY_TARGET_DIR -s JAVA_FILE_1.jar -s JAVA_FILE_2.class`
+NOTE:All translated dependencies should have the same target directory
+4. Go to your target directory
+    b) If you so desire, change `config.hpp` to configure some more advanced features *currently only the way GC works*.
+5. run `make -j` and wait as translated `C++` is being built
+6. Go to `build` directory within your target directory, `translated.out` is the result of building translated C++ code.
+7. On default, `jtcpp` uses Bohem GC. So, `libgc.so` and `libgccpp.so` need to be shipped alongside `translated.out`.
+# Java Standard Library
+`jtcpp` ships with a minimal, bare-bones implementation of java standard library. The shipped version of the standard library is meant only for testing, and contains only support for classes such as `String`, `Object`, `System` and `PrintStream`, required for outputting to console. Those classes contain only implementations of strictly necessary methods.
+# Java features
+`jtcpp` supports object creation, 1D arrays, inheritance, static and virtual methods. Support for generics is partial and they may not always work.
+`jtcpp` does not support multi dimensional arrays, interfaces, switch statements, exception handling.
+# JVM bytcode Ops 
+`jtcpp` currently supports almost all JVM opcodes, besides: `tableswitch`, `lookupswitch` `dup2_x2`, `multanewarray`, `invokedynamic`.
 
-Large chunk of the codebase comes from my previous attempt at creating a Java Runtime written in `Rust`. It did work, and could run simple programs, such as the Sieve of  Eratosthenes's, but was way too slow for my liking, which killed my motivation, so I decided to try and find something else to do.
-
-When looking deeper into both Java, and JVM, one thing struck me as odd. May people seem to believe it to be inherently slow, and many articles try to convince you it really is not. Often, when discussing performance of Java compared to other programming languages, there are many reasons stated, explaing why it is "slower" than alternatives. Of the reasons cited, one that crops up often is use of Bytecode and JVM instead of compiling to a native executable. But is this really relevant, especially with clever optimisations and JIT compiling preformed by the JVM? With this question `jtcpp`(at first `jtc`, but converting Java to `C` turned out to be not worth the hastle) was born. This project aims to asses how much compiling java to native code impacts the performance. `jtcpp` Takes in each java class separately, translating Java classes into C++ code one by one.
-## WIP
-This project was created as a learning challenge for me. It supports a subset of Java ops, but not everything works. Calling the implementation of java standard library bare-bones would be an understatement, it consists of only the things strictly necessary to run simple tests. I might add more features in the future, but it all depends on if I will be able to overcome some more serious roadblocks.
-### InvokeDynamic - codegen during runtime is shockingly common in Java.
-The single, biggest issue which makes some programs impossible to properly translate to C++ is code generation during runtime. At first, it may seem like something that would be pretty rare and used in very specific places(eg. Reflection API) but it is not. `InvokeDynamic` is an opcode which calls a method generated by the associated bootstrap method. You can find it all over the place: It is even emitted where it is not strictly necessary, because generating bytecode during runtime often leads to smaller `.jar` sizes and significantly faster startup times. This is a big issue, because `jtcpp` translates JVM bytecode to C++ before compiling, and can't emit any more code at runtime.
-### UTF16
-Currently, `jtcpp` uses UTF16 in C++ code translated bytecode, and then converts it to UTF-8 to do any IO, including printing to console. This might have a negative impact on performance of generated code.
-## Some comparisons
-*NOTE* used benchmarks can't use features not supported by `jtcpp` which could(but probably did not) negatively impact performance of code, making JVM perform worse than it should have.
-| Benchmark | `jtcpp` generated C++ code | `openjdk version "17.0.7" 2023-04-18` |
-| NBody simulation, n = 30, 1 000 000 iterations | 

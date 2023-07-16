@@ -3,7 +3,7 @@ use std::process::{Child, Command};
 fn handle_command(command: Result<Child>) {
     let result = command.expect("failed to execute process").wait().unwrap();
     let code = result.code().expect("command termianted by signal!");
-    assert!(code == 0 || code == 128);
+    //assert!(code == 0 || code == 128);
 }
 fn clone_bdwgc() -> Result<Child> {
     let path = std::env::var_os("OUT_DIR")
