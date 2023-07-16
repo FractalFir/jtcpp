@@ -138,8 +138,12 @@ pub(crate) struct ImportedJavaClass {
     methods: Box<[Method]>,
     interfaces: Box<[u16]>,
     attributes: Box<[Attribute]>, //field_names: Box<[IString]>,
+    flags: AccessFlags,
 }
 impl ImportedJavaClass {
+    pub(crate) fn flags(&self) -> &AccessFlags {
+        &self.flags
+    }
     pub(crate) fn interfaces(&self) -> &[u16] {
         &self.interfaces
     }
@@ -337,7 +341,7 @@ pub enum ConstantImportError {
     IoError(std::io::Error),
     Utf8Error(std::str::Utf8Error),
 }
-#[derive(Debug)]
+#[derive(Clone, Copy, Debug)]
 pub struct AccessFlags {
     mask: u16,
 }
@@ -346,13 +350,13 @@ impl AccessFlags {
         let mask = load_u16(src)?;
         Ok(Self { mask })
     }
-    fn is_public(&self) -> bool {
+    pub(crate) fn is_public(&self) -> bool {
         self.mask & 0x0001 != 0
     }
-    fn is_private(&self) -> bool {
+    pub(crate) fn is_private(&self) -> bool {
         self.mask & 0x0002 != 0
     }
-    fn is_protected(&self) -> bool {
+    pub(crate) fn is_protected(&self) -> bool {
         self.mask & 0x0004 != 0
     }
     pub fn is_static(&self) -> bool {
@@ -364,19 +368,19 @@ impl AccessFlags {
     pub fn is_super(&self) -> bool {
         self.mask & 0x0020 != 0
     }
-    fn is_interface(&self) -> bool {
+    pub(crate) fn is_interface(&self) -> bool {
         self.mask & 0x0200 != 0
     }
-    fn is_abstract(&self) -> bool {
+    pub(crate) fn is_abstract(&self) -> bool {
         self.mask & 0x0400 != 0
     }
-    fn is_synthetic(&self) -> bool {
+    pub(crate) fn is_synthetic(&self) -> bool {
         self.mask & 0x1000 != 0
     }
-    fn is_annotantion(&self) -> bool {
+    pub(crate) fn is_annotantion(&self) -> bool {
         self.mask & 0x2000 != 0
     }
-    fn is_enum(&self) -> bool {
+    pub(crate) fn is_enum(&self) -> bool {
         self.mask & 0x4000 != 0
     }
 }
@@ -516,7 +520,7 @@ pub(crate) fn load_class<R: std::io::Read>(
             const_items.push(ConstantItem::Padding);
         }
     }
-    let _access_flags = AccessFlags::read(src)?;
+    let flags = AccessFlags::read(src)?;
     //println!("access_flags:{access_flags:?}");
     let this_class = load_u16(src)?;
     //println!("this_class:{this_class}");
@@ -549,6 +553,7 @@ pub(crate) fn load_class<R: std::io::Read>(
     }
     //println!("const_items:{const_items:?}");
     Ok(ImportedJavaClass {
+        flags,
         attributes: attributes.into(),
         fields: fields.into(),
         methods: methods.into(),

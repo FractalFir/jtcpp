@@ -273,6 +273,10 @@ pub(crate) enum FatOp {
         default_op: usize,
         pairs: Box<[(i32, usize)]>,
     },
+    //Emmited after split into basic blocks, for handling exceptions
+    //BeginTry,
+    //EndTry,
+    //Catch,
 }
 impl FatOp {
     pub fn jump_target(&self) -> Option<SmallVec<[usize; 4]>> {

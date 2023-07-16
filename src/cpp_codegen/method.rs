@@ -334,7 +334,7 @@ fn write_op(op: &FatOp, mw: &mut MethodWriter) {
         FatOp::ZGetField(_class_name, field_name) => {
             get_field_impl!(mw, field_name, VariableType::Bool)
         }
-        
+
         FatOp::AGetStatic {
             class_info,
             static_name,
@@ -390,7 +390,14 @@ fn write_op(op: &FatOp, mw: &mut MethodWriter) {
                 VariableType::ArrayRef(Box::new(atype.clone()))
             )
         }
-        FatOp::AAStore | FatOp::BAStore | FatOp::CAStore | FatOp::DAStore | FatOp::FAStore | FatOp::IAStore  | FatOp::SAStore  | FatOp::LAStore=> {
+        FatOp::AAStore
+        | FatOp::BAStore
+        | FatOp::CAStore
+        | FatOp::DAStore
+        | FatOp::FAStore
+        | FatOp::IAStore
+        | FatOp::SAStore
+        | FatOp::LAStore => {
             let (_value_type, value) = mw.vstack_pop().unwrap();
             let (index_type, index) = mw.vstack_pop().unwrap();
             let (arr_ref_type, arr_ref) = mw.vstack_pop().unwrap();
@@ -507,7 +514,7 @@ fn write_op(op: &FatOp, mw: &mut MethodWriter) {
             set_field_impl!(mw, field_name, VariableType::Int)
         }
         FatOp::SPutField(_class_name, field_name) => {
-            set_field_impl!(mw, field_name, VariableType::Short,"int16_t")
+            set_field_impl!(mw, field_name, VariableType::Short, "int16_t")
         }
         FatOp::LPutField(_class_name, field_name) => {
             set_field_impl!(mw, field_name, VariableType::Long)
@@ -669,7 +676,7 @@ fn write_op(op: &FatOp, mw: &mut MethodWriter) {
         FatOp::L2I => convert_impl!(mw, VariableType::Long, VariableType::Int),
         FatOp::L2F => convert_impl!(mw, VariableType::Long, VariableType::Float),
         FatOp::L2D => convert_impl!(mw, VariableType::Long, VariableType::Double),
-        FatOp::AReturn | FatOp::DReturn  | FatOp::FReturn | FatOp::IReturn | FatOp::LReturn => {
+        FatOp::AReturn | FatOp::DReturn | FatOp::FReturn | FatOp::IReturn | FatOp::LReturn => {
             let value = mw.vstack_pop().unwrap().1;
             format!("return {value};")
         }
@@ -772,25 +779,23 @@ fn write_op(op: &FatOp, mw: &mut MethodWriter) {
         FatOp::DupX2 => {
             let value = mw.vstack_pop().unwrap();
             let value_2 = mw.vstack_pop().unwrap();
-            if value_2.0.is_wide(){
+            if value_2.0.is_wide() {
                 mw.vstack_push(&value.1, value.0.clone());
                 mw.vstack_push(&value_2.1, value_2.0.clone());
                 mw.vstack_push(&value.1, value.0.clone());
-            }
-            else{
+            } else {
                 let value_3 = mw.vstack_pop().unwrap();
                 mw.vstack_push(&value.1, value.0.clone());
                 mw.vstack_push(&value_3.1, value_3.0.clone());
                 mw.vstack_push(&value_2.1, value_2.0.clone());
                 mw.vstack_push(&value.1, value.0.clone());
-                
-            }   
+            }
             "".into()
         }
-        FatOp::Swap =>{
+        FatOp::Swap => {
             let value = mw.vstack_pop().unwrap();
             let value_2 = mw.vstack_pop().unwrap();
-            if value.0.is_wide() | value_2.0.is_wide(){
+            if value.0.is_wide() | value_2.0.is_wide() {
                 panic!("Swap attempted at values bigger than word(Double or Long).");
             }
             mw.vstack_push(&value.1, value.0.clone());
@@ -799,13 +804,12 @@ fn write_op(op: &FatOp, mw: &mut MethodWriter) {
         }
         FatOp::Dup2X1 => {
             let value = mw.vstack_pop().unwrap();
-            if value.0.is_wide(){
+            if value.0.is_wide() {
                 let value_2 = mw.vstack_pop().unwrap();
                 mw.vstack_push(&value.1, value.0.clone());
                 mw.vstack_push(&value_2.1, value_2.0.clone());
                 mw.vstack_push(&value.1, value.0.clone());
-            }
-            else{
+            } else {
                 let value_2 = mw.vstack_pop().unwrap();
                 let value_3 = mw.vstack_pop().unwrap();
                 mw.vstack_push(&value_2.1, value_2.0.clone());
@@ -813,27 +817,26 @@ fn write_op(op: &FatOp, mw: &mut MethodWriter) {
                 mw.vstack_push(&value_3.1, value_3.0.clone());
                 mw.vstack_push(&value_2.1, value_2.0.clone());
                 mw.vstack_push(&value.1, value.0.clone());
-            }   
+            }
             "".into()
         }
         FatOp::Dup2 => {
             let value = mw.vstack_pop().unwrap();
-            if value.0.is_wide(){
+            if value.0.is_wide() {
                 mw.vstack_push(&value.1, value.0.clone());
                 mw.vstack_push(&value.1, value.0.clone());
-            }
-            else{
+            } else {
                 let value_2 = mw.vstack_pop().unwrap();
                 mw.vstack_push(&value_2.1, value_2.0.clone());
                 mw.vstack_push(&value.1, value.0.clone());
                 mw.vstack_push(&value_2.1, value_2.0.clone());
                 mw.vstack_push(&value.1, value.0.clone());
-            }   
+            }
             "".into()
         }
         FatOp::Pop2 => {
             let value = mw.vstack_pop().unwrap();
-            if !value.0.is_wide(){
+            if !value.0.is_wide() {
                 let _ = mw.vstack_pop().unwrap();
             }
             "".into()
@@ -911,7 +914,7 @@ fn write_op(op: &FatOp, mw: &mut MethodWriter) {
             assert_eq!(length_type, VariableType::Int);
             mw.vstack_push(&im, VariableType::ArrayRef(Box::new(VariableType::Float)));
             format!("ManagedPointer<RuntimeArray<float>> {im} = managed_from_raw(new RuntimeArray<float>({length}));",)
-        }        
+        }
         FatOp::INewArray => {
             let im = mw.get_intermidiate();
             let (length_type, length) = mw.vstack_pop().unwrap();
@@ -1096,15 +1099,15 @@ fn write_op(op: &FatOp, mw: &mut MethodWriter) {
             code
         }
         FatOp::Throw => {
-            let (exception_type,exception) = mw.vstack_pop().unwrap();
+            let (exception_type, exception) = mw.vstack_pop().unwrap();
             format!("throw {exception};")
         }
         FatOp::MonitorEnter => {
-            let (object_type,object) = mw.vstack_pop().unwrap();
+            let (object_type, object) = mw.vstack_pop().unwrap();
             format!("{object}.monitor_enter();")
         }
         FatOp::MonitorExit => {
-            let (object_type,object) = mw.vstack_pop().unwrap();
+            let (object_type, object) = mw.vstack_pop().unwrap();
             format!("{object}.monitor_exit();")
         }
         FatOp::InvokeDynamic => {

@@ -12,16 +12,30 @@
 struct gc{}
 #endif
 #ifdef ARC_OBJS
-#include <memory>
-template<typename T> using ManagedPointer = std::shared_ptr<T>;
-template<typename T> inline ManagedPointer<T> managed_from_raw(T* ptr){return std::shared_ptr<T>(ptr);}
-#define new_managed(TYPE,ARGS) std::make_shared<TYPE>(ARGS)
-#define managed_from_this(TYPE) (std::static_pointer_cast<TYPE>(this->shared_from_this()))
+
+      #include <memory>
+      #include <type_traits>
+      // Preforms a cast using eiter static_pointer_cast or dynamic_pointer_cast, whichever is needed.
+      template<typename Source, typename Target> std::shared_ptr<Target> smart_cast(std::shared_ptr<Source> src);
+      template<typename Source, typename Target,typename std::enable_if<std::is_polymorphic<Source>::value>::type> std::shared_ptr<Target> smart_cast(std::shared_ptr<Source> src){
+            return std::dynamic_pointer_cast(src);
+      }
+      template<typename Source, typename Target,typename std::enable_if<std::negation<std::is_polymorphic<Source>>::value>::type> std::shared_ptr<Target> smart_cast(std::shared_ptr<Source> src){
+            return std::static_pointer_cast(src);
+      }
+
+      template<typename T> using ManagedPointer = std::shared_ptr<T>;
+      template<typename T> inline ManagedPointer<T> managed_from_raw(T* ptr){return std::shared_ptr<T>(ptr);}
+      #define new_managed(TYPE,ARGS) std::make_shared<TYPE>(ARGS)
+      #define managed_from_this(TYPE) (std::static_pointer_cast<TYPE>(this->java::lang::Object::shared_from_this()))
+      // NOTE: Not finished
+      //#define managed_from_this(TYPE) (smart_cast<java::lang::Object,TYPE>(this->java::lang::Object::shared_from_this()))
+     
 #else
-template<typename T> using ManagedPointer = T*;
-template<typename T> inline ManagedPointer<T> managed_from_raw(T* ptr){return ptr;}
-#define managed_from_this(TYPE) this
-#define new_managed(TYPE,ARGS) new TYPE(ARGS)
+      template<typename T> using ManagedPointer = T*;
+      template<typename T> inline ManagedPointer<T> managed_from_raw(T* ptr){return ptr;}
+      #define managed_from_this(TYPE) this
+      #define new_managed(TYPE,ARGS) new TYPE(ARGS)
 #endif
 namespace java{namespace lang{class Object;};};
 class java::lang::Object: public gc

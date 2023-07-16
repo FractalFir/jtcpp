@@ -117,7 +117,9 @@ impl VariableType {
     }
 }
 impl VariableType {
-    fn is_wide(&self)->bool{matches!(self,Self::Long|Self::Double)}
+    fn is_wide(&self) -> bool {
+        matches!(self, Self::Long | Self::Double)
+    }
     fn assignable(&self, other: &Self) -> bool {
         match self {
             Self::Float => matches!(other, Self::Double | Self::Float),
@@ -173,8 +175,13 @@ impl VariableType {
     }
 }
 #[test]
-fn nested_array_desc_to_ftype(){
-    assert_eq!(field_desc_str_to_ftype("[[I",0),VariableType::ArrayRef(Box::new(VariableType::ArrayRef(Box::new(VariableType::Int)))));
+fn nested_array_desc_to_ftype() {
+    assert_eq!(
+        field_desc_str_to_ftype("[[I", 0),
+        VariableType::ArrayRef(Box::new(VariableType::ArrayRef(Box::new(
+            VariableType::Int
+        ))))
+    );
 }
 pub(crate) fn field_desc_str_to_ftype(desc_str: &str, th: usize) -> VariableType {
     let beg = desc_str.chars().nth(th).unwrap();
@@ -398,7 +405,7 @@ impl CompilationContext {
             "\r Finished stage 4(Generating Source files) of JVM bytecode to C++ translation."
         );
         println!(
-            "DONE! go to the target directory {target}, and run `g++ *.cpp -Ofast -L. -lgc -lgccpp` to build your converted code.", target = ca.out.display(),
+            "DONE! go to the target directory {target}, and run `make` to build your converted code.", target = ca.out.display(),
         );
         Ok(())
     }

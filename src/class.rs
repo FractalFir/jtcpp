@@ -1,10 +1,12 @@
+use crate::fatops::ClassInfo;
 use crate::{
     field_descriptor_to_ftype, IString, Method, VariableType, ERR_SUPER_INVALID, ERR_THIS_INVALID,
 };
 pub(crate) struct Class {
     name: IString,
+    access: crate::importer::AccessFlags,
     parrent: IString,
-    ifaces: Box<[IString]>,
+    ifaces: Box<[ClassInfo]>,
     fields: Vec<(IString, VariableType)>,
     static_fields: Vec<(IString, VariableType)>,
     static_methods: Vec<(IString, Method)>,
@@ -29,6 +31,12 @@ fn java_to_cpp_paths() {
     );
 }
 impl Class {
+    pub(crate) fn is_interface(&self) -> bool {
+        self.access.is_interface()
+    }
+    pub(crate) fn interfaces(&self) -> &[ClassInfo] {
+        &self.ifaces
+    }
     pub(crate) fn path(&self) -> IString {
         cpp_class_to_path(self.cpp_name())
     }
@@ -109,8 +117,14 @@ impl Class {
                 static_methods.push((mangled_name.into(), method));
             }
         }
-        let ifaces = Vec::new();
+        let mut ifaces = Vec::new();
+        for iface in java_class.interfaces() {
+            let class_info = ClassInfo::from_java_path(java_class.lookup_class(*iface).unwrap());
+            ifaces.push(class_info);
+        }
+        let access = *java_class.flags();
         Class {
+            access,
             name: class_name,
             parrent,
             fields,

@@ -117,9 +117,16 @@ pub(crate) fn create_header<W: Write>(out: &mut W, class: &Class) -> std::io::Re
         write!(out, "{}\n", create_namespace_def(class.cpp_name()))?;
     }
     let class_name = class.cpp_name();
+    let mut ifaces_list = String::with_capacity(class.interfaces().len() * 12);
+    for iface in class.interfaces() {
+        ifaces_list.push_str(",public virtual ");
+        ifaces_list.push_str(iface.cpp_class());
+        includes.add_include(&iface.class_path());
+    }
+    let iface_inherit = if class.is_interface() { "virtual" } else { "" };
     write!(
         out,
-        "#pragma once\n{includes}\nstruct {class_name}: {super_name}\n{{\nvirtual ~{class_name}() = default;\n{class_fields}{class_methods}}};",
+        "#pragma once\n{includes}\nstruct {class_name}: public {iface_inherit} {super_name}{ifaces_list}\n{{\nvirtual ~{class_name}() = default;\n{class_fields}{class_methods}}};",
         includes = includes.get_code(),
         super_name = class.parrent_cpp_name()
     )
