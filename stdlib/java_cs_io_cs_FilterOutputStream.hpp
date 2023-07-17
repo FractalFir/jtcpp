@@ -5,5 +5,5 @@ class java::io::FilterOutputStream:public java::io::OutputStream{
     protected:
         FilterOutputStream();
     public:
-        FilterOutputStream(std::ofstream out_stream);
+        FilterOutputStream(std::unique_ptr<OutuptStreamWrapper> out_stream);
 };

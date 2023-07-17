@@ -263,14 +263,14 @@ fn print_progress(curr: usize, whole: usize) {
     std::io::stdout().flush().unwrap();
 }
 macro_rules! write_cpp_file {
-    ($bytes:ident,$target_path:ident,$name:literal) => {
+    ($bytes:ident,$target_path:ident,$name:literal) => {{
         let mut target_path = $target_path.clone();
         target_path.push($name);
         if !target_path.exists() {
             let mut target_out = std::fs::File::create(target_path)?;
             target_out.write_all($bytes)?;
         }
-    };
+    }};
 }
 impl CompilationContext {
     fn write_stdlib(target_path: &PathBuf) -> std::io::Result<()> {
@@ -286,8 +286,11 @@ impl CompilationContext {
         write_cpp_file!(GC_HEADER, target_path, "gc.h");
         write_cpp_file!(GC_VERSION_HEADER, target_path, "gc_version.h");
         write_cpp_file!(GC_CONFIG_MACROS, target_path, "gc_config_macros.h");
-        write_cpp_file!(GC_SO, target_path, "libgc.so");
-        write_cpp_file!(GCCPP_SO, target_path, "libgccpp.so");
+        let mut build_path = target_path.clone();
+        build_path.push("build");
+        std::fs::create_dir_all(&build_path)?;
+        write_cpp_file!(GC_SO, build_path, "libgc.so");
+        write_cpp_file!(GCCPP_SO, build_path, "libgccpp.so");
         Ok(())
     }
     fn new(ca: &ConvertionArgs) -> Result<(), BytecodeImportError> {

@@ -977,6 +977,9 @@ fn write_op(op: &FatOp, mw: &mut MethodWriter) {
             args.reverse();
             let mut args = args.iter();
             let objref = args.next().unwrap();
+            if let Some(dep) = ret.dependency() {
+                mw.add_include(&dep);
+            }
             if *ret == crate::VariableType::Void {
                 code.push_str(&format!("{objref}->{vmethod_name}("));
             } else {
@@ -1007,6 +1010,9 @@ fn write_op(op: &FatOp, mw: &mut MethodWriter) {
             args.reverse();
             let mut args = args.iter();
             let objref = args.next().unwrap();
+            if let Some(dep) = ret.dependency() {
+                mw.add_include(&dep);
+            }
             if *ret == crate::VariableType::Void {
                 code.push_str(&format!("{objref}->{vmethod_name}("));
             } else {
@@ -1043,6 +1049,9 @@ fn write_op(op: &FatOp, mw: &mut MethodWriter) {
             args.reverse();
             let mut args = args.iter();
             let objref = args.next().unwrap();
+            if let Some(dep) = ret.dependency() {
+                mw.add_include(&dep);
+            }
             if *ret == crate::VariableType::Void {
                 code.push_str(&format!(
                     "{method_class_name}::{method_name}({objref}",
@@ -1074,6 +1083,9 @@ fn write_op(op: &FatOp, mw: &mut MethodWriter) {
             }
             args.reverse();
             let mut args = args.iter();
+            if let Some(dep) = ret.dependency() {
+                mw.add_include(&dep);
+            }
             if *ret == crate::VariableType::Void {
                 code.push_str(&format!(
                     "{method_class_name}::{method_name}(",

@@ -5,8 +5,8 @@ namespace java{namespace io{class PrintStream;};};
 class java::io::PrintStream:public java::io::FilterOutputStream{
     public:
         virtual ~PrintStream() = default;
-        PrintStream(OutuptStreamWrapper* out_stream);
-
+        PrintStream(std::unique_ptr<OutuptStreamWrapper> out_stream);
+        
         virtual void print_java_cs_lang_cs_String__V(ManagedPointer<java::lang::String> string);
         virtual void print_I_V(int value);
         virtual void print_F_V(float value);
