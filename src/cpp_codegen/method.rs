@@ -124,8 +124,30 @@ macro_rules! convert_impl {
         )
     }};
 }
-fn impl_lambda(mw:&MethodWriter)->String{
-    todo!("Can't implement lambdas quite yet!");
+fn args_to_clist(args:&[VariableType])->IString{
+    let mut arg_iter = args.iter();
+    let mut res = String::with_capacity(args.len() * 8);
+    if let Some(arg) = arg_iter.next(){
+        res.push_str(&arg.c_type());
+    }
+    for arg in arg_iter{
+        res.push(',');
+        res.push_str(&arg.c_type());
+    }
+    res.into()
+}
+fn impl_lambda(mw:&mut MethodWriter,name:&str,args:&[VariableType],ret:&VariableType)->String{
+    let lambda_name = format!("LAMBDA_CLASS_{name}");
+    let random = 0;
+    let lambda_impl_name = format!("{lambda_name}_IMPL_{random}");
+    if let Some(dep) = ret.dependency(){
+        mw.add_include(&dep);
+    };
+    let lambda_def = format!("struct {lambda_impl_name}:{lambda_name}{{~virtual {lambda_impl_name}();virtual {ret_ctype} {name}({args}) = this::lambda$main$0; {lambda_impl_name}();}};",
+    ret_ctype = ret.c_type(), args = args_to_clist(args));
+    let im = mw.get_intermidiate();
+    mw.vstack_push(&im, VariableType::ObjectRef(ClassInfo::from_raw(&lambda_name)));
+    format!("{lambda_def}; ManagedPointer<{lambda_name}> {im} = managed_from_raw(new {lambda_impl_name}());")
 }
 macro_rules! conditional_impl {
     ($mw:ident,$cmp:literal,$target:ident) => {{
@@ -1013,11 +1035,13 @@ fn write_op(op: &FatOp, mw: &mut MethodWriter) {
             let (_, object) = mw.vstack_pop().unwrap();
             format!("{object}.monitor_exit();")
         }
-        FatOp::InvokeDynamic(dynamic_handle) => {
+        FatOp::InvokeDynamic(dynamic_handle,name,args,ret) => {
+            println!("ret:{ret:?}");
             match dynamic_handle{
-                DynamicMethodHandle::InvokeStatic(class_info,method_name,args,ret)=>{
+                DynamicMethodHandle::InvokeStatic(class_info,method_name,_dyn_args,dyn_ret)=>{
+                    println!("dyn_ret:{dyn_ret:?}");
                     if class_info.cpp_class() == "java::lang::invoke::LambdaMetafactory" && method_name.contains("metafactory"){
-                        impl_lambda(&mw)
+                        impl_lambda(mw,name,args,ret)
                     }else{
                         panic!("Invoke Dynamic requires runtime codegen, which is not supported!");
                     }
