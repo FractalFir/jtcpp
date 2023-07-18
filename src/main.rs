@@ -115,8 +115,6 @@ impl VariableType {
     fn is_array(&self) -> bool {
         matches!(self, Self::ArrayRef(_))
     }
-}
-impl VariableType {
     fn is_wide(&self) -> bool {
         matches!(self, Self::Long | Self::Double)
     }
@@ -151,6 +149,9 @@ impl VariableType {
                 format!("ManagedPointer<RuntimeArray<{}>>", atype.c_type()).into()
             } //_=>todo!("Can't get ctype of {self:?}!"),
         }
+    }
+    fn unknown()->Self{
+        Self::ObjectRef(ClassInfo::unknown()) 
     }
     fn is_unknown(&self) -> bool {
         if let Self::ObjectRef(class_info) = self {

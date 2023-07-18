@@ -1,123 +1,7 @@
-use super::IncludeBuilder;
 use crate::{fatops::FatOp, ClassInfo, IString, VariableType};
-use std::{collections::HashSet, io::Write};
+use std::io::Write;
 use crate::fatops::DynamicMethodHandle;
-struct MethodWriter {
-    includes: super::IncludeBuilder,
-    code: String,
-    sig: IString,
-    ident_level: usize,
-    local_decl: String,
-    vstack: Vec<(VariableType, IString)>,
-    locals: HashSet<IString>,
-    im_id: usize,
-}
-enum LocalKind {
-    ObjectRef,
-    Float,
-    Double,
-    Int,
-    Long,
-}
-impl MethodWriter {
-    pub(crate) fn esnsure_local_exists(&mut self, id: u8, kind: LocalKind, ctype: &str) -> IString {
-        let local = self.get_local(id, kind);
-        if !self.locals.contains(&local) {
-            self.local_decl.push_str(&format!("\t{ctype} {local};\n"));
-            self.locals.insert(local.clone());
-        }
-        local
-    }
-    pub(crate) fn get_local(&self, id: u8, kind: LocalKind) -> IString {
-        match kind {
-            LocalKind::ObjectRef => format!("l{id}a"),
-            LocalKind::Float => format!("l{id}f"),
-            LocalKind::Double => format!("l{id}d"),
-            LocalKind::Int => format!("l{id}i"),
-            LocalKind::Long => format!("l{id}l"),
-        }
-        .into()
-    }
-    pub(crate) fn use_debuginfo(&self) -> bool {
-        cfg!(debug_assertions)
-    }
-    pub(crate) fn new() -> Self {
-        Self {
-            vstack: Vec::with_capacity(64),
-            code: String::new(),
-            sig: "".into(),
-            includes: IncludeBuilder::new(""),
-            ident_level: 1,
-            local_decl: String::new(),
-            locals: HashSet::new(),
-            im_id: 0,
-        }
-    }
-    pub(crate) fn begin_bb(&mut self, index: usize) {
-        self.write_ident();
-        self.code.push_str(&format!("bb{index}:\n"));
-    }
-    pub(crate) fn begin_scope(&mut self) {
-        self.write_ident();
-        self.ident_level += 1;
-        self.code.push_str("{\n");
-    }
-    pub(crate) fn end_scope(&mut self) {
-        self.ident_level -= 1;
-        self.write_ident();
-        self.code.push_str("}\n");
-    }
-    fn write_ident(&mut self) {
-        for _ in 0..self.ident_level {
-            self.code.push('\t');
-        }
-    }
-    pub(crate) fn add_include(&mut self, include: &str) {
-        self.includes.add_include(include);
-    }
-    pub(crate) fn set_sig(&mut self, sig: &str) {
-        self.sig = sig.into();
-    }
-    pub(crate) fn write_op(&mut self, curr_op: &FatOp, code: &str) {
-        if self.use_debuginfo() {
-            self.write_ident();
-            self.code.push_str(&format!("//{curr_op:?}\n"));
-        }
-        self.write_ident();
-        self.code.push_str(code);
-        self.code.push('\n');
-    }
-    pub(crate) fn vstack_push(&mut self, vvar: &str, vtype: VariableType) {
-        self.vstack.push((vtype, vvar.into()))
-    }
-    pub(crate) fn get_intermidiate(&mut self) -> IString {
-        let im = format!("i{id}", id = self.im_id);
-        self.im_id += 1;
-        im.into()
-    }
-    pub(crate) fn push_locals(&mut self, local: &str, decl: &str) {
-        if !self.locals.contains(local) {
-            self.locals.insert(local.into());
-            self.local_decl.push_str(decl);
-        }
-    }
-    pub(self) fn print_stack(&self) {
-        println!("vstack:{:?}", self.vstack);
-    }
-    pub(crate) fn vstack_pop(&mut self) -> Option<(VariableType, IString)> {
-        self.vstack.pop()
-    }
-    pub(crate) fn final_code(&self) -> IString {
-        format!(
-            "{includes}{sig}{{\n{local_decl}{code}}}",
-            includes = self.includes.get_code(),
-            code = self.code,
-            sig = self.sig,
-            local_decl = self.local_decl
-        )
-        .into()
-    }
-}
+pub(crate) use super::method_writer::{MethodWriter,LocalKind};
 enum BasicBlock {
     Raw { ops: Box<[FatOp]>, starts: usize },
     //Scope(Box<[BasicBlock]>),
@@ -125,14 +9,14 @@ enum BasicBlock {
 macro_rules! load_impl {
     ($mw:ident,$index:ident,$kind:expr,$vtype:expr) => {{
         let local = $mw.get_local(*$index, $kind);
-        $mw.vstack_push(&local, $vtype);
+        $mw.vstack_push(&local.0, local.1);
         "".into()
     }};
 }
 macro_rules! store_impl {
     ($mw:ident,$index:ident,$kind:expr) => {{
         let (vtype, value): (VariableType, IString) = $mw.vstack_pop().unwrap();
-        let local: IString = $mw.esnsure_local_exists(*$index, $kind, &vtype.c_type());
+        let (local,_): (IString,_) = $mw.ensure_local_exists(*$index, $kind, vtype);
         format!("{local} = {value};")
     }};
 }
@@ -202,7 +86,7 @@ macro_rules! get_static_impl {
 }
 macro_rules! set_static_impl {
     ($mw:ident,$field_owner:ident,$static_name:ident,$vartype:expr) => {{
-        let (vtype, value) = $mw.vstack_pop().unwrap();
+        let (_, value) = $mw.vstack_pop().unwrap();
         //debug_assert_eq!(vtype, $vartype);
         format!(
             "{field_owner}::{static_name} = {value};",
@@ -415,7 +299,10 @@ fn write_op(op: &FatOp, mw: &mut MethodWriter) {
             assert!(arr_ref_type.is_array() || arr_ref_type.is_unknown());
             assert_eq!(index_type, VariableType::Int);
             let im_name = mw.get_intermidiate();
-            mw.vstack_push(&im_name, VariableType::ObjectRef(ClassInfo::unknown()));
+            let arr_member_type = if let VariableType::ArrayRef(arr_member_type) = arr_ref_type{
+                arr_member_type
+            }else{panic!()};
+            mw.vstack_push(&im_name, *arr_member_type);
             format!("auto {im_name} = {arr_ref}->Get({index});")
         }
         FatOp::BALoad => {
@@ -529,7 +416,7 @@ fn write_op(op: &FatOp, mw: &mut MethodWriter) {
         FatOp::APutStatic {
             class_info,
             field_name,
-            type_info,
+            ..
         } => set_static_impl!(
             mw,
             class_info,
@@ -570,9 +457,8 @@ fn write_op(op: &FatOp, mw: &mut MethodWriter) {
             field_name,
             VariableType::ArrayRef(Box::new(atype.clone()))
         ),
-
         FatOp::IInc(local, by) => {
-            let local = mw.get_local(*local, LocalKind::Int);
+            let (local,_) = mw.get_local(*local, LocalKind::Int);
             format!("{local} += {by};")
         }
         FatOp::DAdd => arthm_impl!(mw, VariableType::Double, "+"),
@@ -622,7 +508,7 @@ fn write_op(op: &FatOp, mw: &mut MethodWriter) {
         FatOp::IShl => arthm_impl!(mw, VariableType::Int, "<<"),
         FatOp::IShr => arthm_impl!(mw, VariableType::Int, ">>"),
         FatOp::IUShr => {
-            let (btype, b) = mw.vstack_pop().unwrap();
+            let (_, b) = mw.vstack_pop().unwrap();
             let (atype, a) = mw.vstack_pop().unwrap();
             debug_assert_eq!(atype, VariableType::Int);
             let im = mw.get_intermidiate();
@@ -647,7 +533,7 @@ fn write_op(op: &FatOp, mw: &mut MethodWriter) {
         FatOp::LShl => arthm_impl!(mw, VariableType::Long, "<<"),
         FatOp::LShr => arthm_impl!(mw, VariableType::Long, ">>"),
         FatOp::LUShr => {
-            let (btype, b) = mw.vstack_pop().unwrap();
+            let (_, b) = mw.vstack_pop().unwrap();
             let (atype, a) = mw.vstack_pop().unwrap();
             debug_assert_eq!(atype, VariableType::Long);
             let im = mw.get_intermidiate();
@@ -956,6 +842,7 @@ fn write_op(op: &FatOp, mw: &mut MethodWriter) {
                     "java/lang/String",
                 )),
             );
+            let const_string = (&*const_string).replace("\n","\\n").replace("\"","\\\"").replace("\r","\\r");
             format!("ManagedPointer<java::lang::String> {im_name} = managed_from_raw(new java::lang::String(u\"{const_string}\"));")
         }
         FatOp::ClassConst(class_info) => {
@@ -1115,15 +1002,15 @@ fn write_op(op: &FatOp, mw: &mut MethodWriter) {
             code
         }
         FatOp::Throw => {
-            let (exception_type, exception) = mw.vstack_pop().unwrap();
+            let (_, exception) = mw.vstack_pop().unwrap();
             format!("throw {exception};")
         }
         FatOp::MonitorEnter => {
-            let (object_type, object) = mw.vstack_pop().unwrap();
+            let (_, object) = mw.vstack_pop().unwrap();
             format!("{object}.monitor_enter();")
         }
         FatOp::MonitorExit => {
-            let (object_type, object) = mw.vstack_pop().unwrap();
+            let (_, object) = mw.vstack_pop().unwrap();
             format!("{object}.monitor_exit();")
         }
         FatOp::InvokeDynamic(dynamic_handle) => {
@@ -1234,7 +1121,7 @@ pub(crate) fn create_method_impl(
     method: &crate::Method,
 ) -> Result<(), std::io::Error> {
     let bb_tree = fat_ops_to_bb_tree(method.ops());
-    let mut writer = MethodWriter::new();
+    let mut writer = MethodWriter::new(method.args());
     let mut fn_sig = String::new();
     push_method_sig_args(
         &mut fn_sig,

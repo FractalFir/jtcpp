@@ -1,6 +1,7 @@
 use crate::{Class, IString};
 use std::collections::HashSet;
 use std::io::Write;
+mod method_writer;
 pub mod method;
 pub(crate) use method::create_method_impl;
 pub(self) struct IncludeBuilder {

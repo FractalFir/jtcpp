@@ -6,11 +6,6 @@ class Dog implements Animal{
     System.out.println("Woof!");
   }
 }
-class Cat implements Animal{
-  public void Sound(){
-    System.out.println("Meow!");
-  }
-}
 class Cow implements Animal{
   public void Sound(){
     System.out.println("Moo!");
