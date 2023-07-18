@@ -51,6 +51,39 @@ impl ClassInfo {
     }
 }
 #[derive(Debug, Clone)]
+pub(crate) enum DynamicMethodHandle{
+    GetField(u16),
+    GetStatic(u16),
+    PutField(u16),
+    PutStatic(u16),
+    InvokeVirtual(u16),
+    NewInvokeSpecial(u16),
+    InvokeStatic(ClassInfo, IString, Box<[VariableType]>, VariableType),
+    InvokeSpecial(u16),
+    InvokeInterface(u16),
+}
+impl DynamicMethodHandle{
+    fn from_kind(kind:u8,index:u16,jc:&ImportedJavaClass)->Self{
+        match kind{
+            0=>panic!("Invalid reference kind (0) of a method handle!"),
+            1=>Self::GetField(index),
+            2=>Self::GetStatic(index),
+            3=>Self::PutField(index),
+            4=>Self::PutStatic(index),
+            5=>Self::InvokeVirtual(index),
+            6=>{
+                let (class, name, args, ret) = methodref_to_name_and_sig(index, jc);
+                let class_info = ClassInfo::from_java_path(&class);
+                Self::InvokeStatic(class_info,name,args.into(),ret)
+            }
+            7=>Self::InvokeSpecial(index),
+            8=>Self::NewInvokeSpecial(index),
+            9=>Self::InvokeInterface(index),
+            9.. =>panic!("Invalid reference kind ({kind}) of a method handle!"),
+        }
+    }
+}
+#[derive(Debug, Clone)]
 pub(crate) enum FatOp {
     AConstNull,
     IConst(i32),
@@ -110,7 +143,7 @@ pub(crate) enum FatOp {
     InvokeSpecial(ClassInfo, IString, Box<[VariableType]>, VariableType),
     InvokeStatic(ClassInfo, IString, Box<[VariableType]>, VariableType),
     InvokeInterface(ClassInfo, IString, Box<[VariableType]>, VariableType), //Unfinshed
-    InvokeDynamic, //Temporarly ignored(Hard to parse)
+    InvokeDynamic(DynamicMethodHandle), //Temporarly ignored(Hard to parse)
     InvokeVirtual(ClassInfo, IString, Box<[VariableType]>, VariableType),
     ZGetStatic(ClassInfo, IString),
     BGetStatic(ClassInfo, IString),
@@ -664,10 +697,10 @@ pub(crate) fn expand_ops(ops: &[(OpCode, u16)], class: &ImportedJavaClass) -> Bo
                 let (reference_kind, reference_index) = class
                     .lookup_method_handle(bootstrap_method.bootstrap_method_ref)
                     .unwrap();
-                println!("reference_kind:{reference_kind},reference_index:{reference_index}");
-                panic!();
+                let handle = DynamicMethodHandle::from_kind(reference_kind, reference_index, class);
+                println!("\nhandle:{handle:?},reference_index:{reference_index}\n");
                 //let (name, argc) = methodref_to_mangled_and_argc(bootstrap_method.bootstrap_method_ref, class);
-                FatOp::InvokeDynamic
+                FatOp::InvokeDynamic(handle)
                 //FatOp::InvokeDynamic(name, argc)
             }
             OpCode::Return => FatOp::Return,

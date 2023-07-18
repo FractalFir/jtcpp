@@ -1,6 +1,7 @@
 use super::IncludeBuilder;
 use crate::{fatops::FatOp, ClassInfo, IString, VariableType};
 use std::{collections::HashSet, io::Write};
+use crate::fatops::DynamicMethodHandle;
 struct MethodWriter {
     includes: super::IncludeBuilder,
     code: String,
@@ -238,6 +239,9 @@ macro_rules! convert_impl {
             target = $target.c_type()
         )
     }};
+}
+fn impl_lambda(mw:&MethodWriter)->String{
+    todo!("Can't implement lambdas quite yet!");
 }
 macro_rules! conditional_impl {
     ($mw:ident,$cmp:literal,$target:ident) => {{
@@ -1122,8 +1126,17 @@ fn write_op(op: &FatOp, mw: &mut MethodWriter) {
             let (object_type, object) = mw.vstack_pop().unwrap();
             format!("{object}.monitor_exit();")
         }
-        FatOp::InvokeDynamic => {
-            panic!("Invoke Dynamic requires runtime codegen, which is not supported!");
+        FatOp::InvokeDynamic(dynamic_handle) => {
+            match dynamic_handle{
+                DynamicMethodHandle::InvokeStatic(class_info,method_name,args,ret)=>{
+                    if class_info.cpp_class() == "java::lang::invoke::LambdaMetafactory" && method_name.contains("metafactory"){
+                        impl_lambda(&mw)
+                    }else{
+                        panic!("Invoke Dynamic requires runtime codegen, which is not supported!");
+                    }
+                },
+                _=>panic!("Invoke Dynamic requires runtime codegen, which is not supported!"),
+            }
         }
         FatOp::Dup2X2 | &FatOp::MultiANewArray(_, _) | &FatOp::LookupSwitch { .. } => todo!(),
         //_ => todo!("Unsuported op:\"{op:?}\""),

@@ -159,6 +159,15 @@ impl ImportedJavaClass {
             None
         }
     }
+    /*
+    pub(crate) fn get_bootstrap_methods(&self)->Option<Box<[BootstrapMethod]>>{
+        for attribute in self.attributes{
+            if let Attribute::BootstrapMethod { bootstrap_methods } = attribute{
+                return Some(bootstrap_methods);
+            }
+        }
+        None
+    }*/
     pub(crate) fn lookup_method_handle(&self, method_handle: u16) -> Option<(u8, u16)> {
         let method_handle = &self.const_items[method_handle as usize - 1];
         if let ConstantItem::MethodHandle {
