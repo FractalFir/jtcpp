@@ -1,3 +1,4 @@
+// Interfaces don't yet work!
 interface Animal{
   public void Sound();
 }

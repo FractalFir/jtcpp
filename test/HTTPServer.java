@@ -1,3 +1,4 @@
+//This example can be transpiled, but produced C++ does not yet compile, since the C++ implementation of the stdlib does not support Charsets.
 import java.net.Socket;
 import java.net.ServerSocket;
 import java.io.OutputStream;

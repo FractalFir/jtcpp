@@ -93,15 +93,18 @@ impl MethodWriter {
     pub(crate) fn set_sig(&mut self, sig: &str) {
         self.sig = sig.into();
     }
+    pub(crate) fn write_raw(&mut self, code: &str){
+        self.write_ident();
+        self.code.push_str(code);
+        self.code.push('\n');
+    }
     pub(crate) fn write_op(&mut self, curr_op: &FatOp, code: &str) {
         if self.use_debuginfo() {
             self.write_ident();
             self.code.push_str(&format!("//{curr_op:?}\n"));
         }
         if code != ""{
-            self.write_ident();
-            self.code.push_str(code);
-            self.code.push('\n');
+            self.write_raw(code);
         }
     }
     pub(crate) fn vstack_push(&mut self, vvar: &str, vtype: VariableType) {

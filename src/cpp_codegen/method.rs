@@ -1049,7 +1049,21 @@ fn write_op(op: &FatOp, mw: &mut MethodWriter) {
                 _=>panic!("Invoke Dynamic requires runtime codegen, which is not supported!"),
             }
         }
-        FatOp::Dup2X2 | &FatOp::MultiANewArray(_, _) | &FatOp::LookupSwitch { .. } => todo!(),
+        FatOp::LookupSwitch{default_op,pairs}=>{
+            let (key_type,key) = mw.vstack_pop().unwrap();
+            assert!(VariableType::Int.assignable(&key_type));
+            mw.write_raw(&format!("switch ({key})"));
+            mw.begin_scope();
+            for (key,target) in pairs.iter(){
+                mw.write_raw(&format!("case {key}:"));
+                mw.write_raw(&format!("\tgoto bb{target};"));
+            }
+            mw.write_raw("default:");
+            mw.write_raw(&format!("\tgoto bb{default_op};"));
+            mw.end_scope();
+            "".into()
+        },
+        FatOp::Dup2X2 | &FatOp::MultiANewArray(_, _) => todo!(),
         //_ => todo!("Unsuported op:\"{op:?}\""),
     };
     mw.write_op(op, &code);

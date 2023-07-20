@@ -442,10 +442,30 @@ pub(crate) fn load_ops<R: std::io::Read>(
                 }))
             }
             0xaa => {
-                return Err(std::io::Error::new(
-                    std::io::ErrorKind::Other,
-                    "Table switch op not supported!",
-                ));
+                let to_next = ((4 - curr_offset % 4) % 4) as usize;
+                // skip to_next
+                let mut out = [0; 4];
+                src.read_exact(&mut out[..to_next])?;
+                curr_offset += to_next as u16;
+                assert_eq!(curr_offset % 4, 0);
+                let default_offset = load_i32(src)?;
+                curr_offset += 4 as u16;
+                let low = load_i32(src)?;
+                curr_offset += 4 as u16;
+                let high = load_i32(src)?;
+                curr_offset += 4 as u16;
+                let count = (high - low + 1);
+                let mut pairs = Vec::with_capacity(count as usize);
+                for key in 0..count{
+                    let curr_key:i32 = key - low;
+                    let offset = load_i32(src)?;
+                    curr_offset += 4 as u16;
+                    pairs.push((curr_key,offset));
+                }
+                OpCode::LookupSwitch(Box::new(LookupSwitch {
+                    default_offset,
+                    pairs: pairs.into(),
+                }))
             }
             0xac => OpCode::IReturn,
             0xad => OpCode::LReturn,
