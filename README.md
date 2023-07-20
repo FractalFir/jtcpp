@@ -31,14 +31,21 @@ In order to test out some examples(they are in `test` directory), compile them u
 After that, you should have a naively compiled version of input program. 
 
 Beware! Some of examples do not work on purpose, to show what is currently missing. Examples which do not work have a comment at their top, explaing exactly why they do not work yet.
-Example of building an example:
+## Example of building an example:
 `cd test/nbody`
-`javac NBody`
-`cd ../..`
-`jtcpp --out target/nbody -s test/nbody/Planet.class -s test/nbody/Vector3.class -s test/nbody/NBody.class -s test/nbody/Rand.class`
-`cd target/nbody`
-`make`
-`cd build`
-`./translated.out`
-And you should see positions and velocities of simulated bodies being printed.
 
+`javac NBody`
+
+`cd ../..`
+
+`jtcpp --out target/nbody -s test/nbody/Planet.class -s test/nbody/Vector3.class -s test/nbody/NBody.class -s test/nbody/Rand.class`
+
+`cd target/nbody`
+
+`make`
+
+`cd build`
+
+`./translated.out`
+
+And after ruinng `./translated.out` you should see positions and velocities of simulated bodies being printed.
