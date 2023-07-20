@@ -1,6 +1,7 @@
 # What is `jtcpp`
 Disclaimer:
 *`jtcpp` was created as a learning exercise, and a way to better understand both JVM bytcode and Java class format. It is a proof of concept, and not meant to be used for anything besides exploring the idea of compiling languages using JVM to native code.*
+
 `jtcpp` is a versatile, highly experimental JVM bytecode to C++ transpiler. It generates C++ code which an exact, JVM op into C++ statement, translation of the input bytecode. This approach has some limitations, which may reduce performance of generated C++ code. This makes general comparisons between speed original Java code and translated C++ very hard, because it varies so much(From 3x speedup to 50x slowdown).
 # Compatibility.
 Building `jtcpp` is supported only on Linux. `make`,`cmake`,`git` and either `g++` or `clang` is required.
